@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <link href='https://unpkg.com/mapbox-gl@0.44.2/dist/mapbox-gl.css' rel='stylesheet' />
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <script src="https://unpkg.com/streamsaver@1.0.1/StreamSaver.js"></script>
+    <script src="https://cdn.rawgit.com/creatorrr/web-streams-polyfill/master/dist/polyfill.min.js"></script>
+    <title>Map Printer</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+      }
+      #left {
+        padding: 1em;
+        width: 300px;
+      }
+      #right {
+      }
+      #map-wrap {
+        position: absolute;
+        width:0;
+        height: 0;
+        overflow: hidden;
+      }
+      .map {
+        position: absolute;
+        visibility: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div id='left'></div>
+    <div id='right'></div>
+    <div id="map-wrap">
+      <div id="map" class="map"></div>
+    </div>
+    <script src="bundle.js"></script>
+  </body>
+</html>

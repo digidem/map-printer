@@ -1,0 +1,32 @@
+{
+  "name": "map-printer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "budo index.js:bundle.js --live",
+    "build": "mkdirp build && copyfiles index.html build && browserify index.js -o build/bundle.js"
+  },
+  "author": "Digital Democracy",
+  "license": "MIT",
+  "dependencies": {
+    "mapbox-map-image-stream": "^1.0.0",
+    "streamsaver": "^1.0.1",
+    "yo-yo": "^1.4.1"
+  },
+  "devDependencies": {
+    "browserify": "^16.1.1",
+    "budo": "^11.2.0",
+    "copyfiles": "^2.0.0",
+    "mkdirp": "^0.5.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/digidem/map-printer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/digidem/map-printer/issues"
+  },
+  "homepage": "https://github.com/digidem/map-printer#readme",
+  "description": ""
+}
