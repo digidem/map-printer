@@ -1,6 +1,6 @@
 var yo = require('yo-yo')
 var mapStream = require('mapbox-map-image-stream')
-var streamsaver = require('StreamSaver')
+var streamsaver = require('streamsaver')
 
 var form = yo`<form>
 <div class="form-group">
