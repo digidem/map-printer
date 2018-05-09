@@ -9,6 +9,21 @@ var settings = JSON.parse(window.localStorage.getItem('map-export-settings')) ||
   bbox: [-7.1354, 57.9095, -6.1357, 58.516]
 }
 
+function getProgress (pct, hidden) {
+  var text = pct ? 'Exporting ' + Math.floor(pct) + '%' : 'Preparing...'
+  var width = pct || 100
+  return yo`<div style="display: ${hidden ? 'none' : 'block'}">
+    <p>${text}</p>
+    <div class="progress ${pct ? '' : 'progress-bar-striped progress-bar-animated'}">
+      <div class="progress-bar" role="progressbar" style="width: ${width}%" aria-valuenow="${width}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+  </div>`
+}
+
+var progress = window.progress = getProgress(0, true)
+
+var button = yo`<button type="submit" class="btn btn-primary" onclick="${onExportClick}">Export Image</button>`
+
 var form = yo`<form>
 <div class="form-group">
   <label for="token">Mapbox Token</label>
@@ -50,8 +65,19 @@ var form = yo`<form>
     <option ${settings.dpi === 288 ? 'selected' : ''} value="288">288dpi</option>
   </select>
 </div>
-<button type="submit" class="btn btn-primary" onclick="${exportMap}">Export Image</button>
+${progress}
+${button}
 </form>`
+
+var mapDiv = renderMapDiv(['100%', '100%'])
+
+
+
+function renderMapDiv ([width, height]) {
+  return yo`<div style="background-color: #cccccc; width: ${width}; height: ${height}">Map will be here</div>`
+}
+
+form.addEventListener('blur', () => console.log('blur'), true)
 
 function onblur () {
   settings = {
@@ -67,12 +93,15 @@ function onblur () {
     width: form.width.valueAsNumber,
     height: form.height.valueAsNumber
   }
-  console.log(settings)
   window.localStorage.setItem('map-export-settings', JSON.stringify(settings))
 }
 
-function exportMap (e) {
+progress.querySelector('.progress-bar').style.transition = 'none'
+
+function onExportClick (e) {
   e.preventDefault()
+  button.style.display = 'none'
+  yo.update(progress, getProgress(0))
   var downloadStream = streamsaver.createWriteStream('map.png')
   let writer = downloadStream.getWriter()
   var mapDiv = document.getElementById('map')
@@ -83,8 +112,9 @@ function exportMap (e) {
   })
   mapStream(settings.style, mapDiv, opts)
     .on('data', data => writer.write(data))
-    .on('progress', p => console.log(p))
+    .on('progress', pct => yo.update(progress, getProgress(Math.floor(pct * 100))))
     .on('end', () => writer.close())
 }
 
 document.getElementById('left').appendChild(form)
+document.getElementById('right').appendChild(mapDiv)
