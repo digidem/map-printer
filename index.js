@@ -1,6 +1,7 @@
 var yo = require('yo-yo')
 var mapStream = require('mapbox-map-image-stream')
 var streamsaver = require('streamsaver')
+var cacheStore = require('browser-cache-blob-store')
 
 var settings = JSON.parse(window.localStorage.getItem('map-export-settings')) || {
   style: 'mapbox://styles/mapbox/streets-v9',
@@ -73,18 +74,30 @@ function onblur () {
 
 function exportMap (e) {
   e.preventDefault()
-  var downloadStream = streamsaver.createWriteStream('map.png')
-  let writer = downloadStream.getWriter()
+
+  var blobs = cacheStore()
+  var bs = blobs.createWriteStream('data', writeToFile)
   var mapDiv = document.getElementById('map')
   var opts = Object.assign({}, settings, {
     bbox: settings.bbox.join(','),
     width: settings.width + 'mm',
     height: settings.height + 'mm'
   })
+
   mapStream(settings.style, mapDiv, opts)
-    .on('data', data => writer.write(data))
-    .on('progress', p => console.log(p))
-    .on('end', () => writer.close())
+    .on('data', data => bs.write(data))
+    .on('progress', p => console.log(Math.floor(p * 100) + '%'))
+    .on('end', () => { console.log('done'); bs.end() })
+
+  function writeToFile () {
+    var downloadStream = streamsaver.createWriteStream('map.png')
+    var writer = downloadStream.getWriter()
+    console.log('writing to file')
+    blobs.createReadStream('data')
+      .on('data', data => { writer.write(data) })
+      .once('end', () => { console.log('done'); writer.close() })
+      .once('error', err => { throw err })
+  }
 }
 
 document.getElementById('left').appendChild(form)
