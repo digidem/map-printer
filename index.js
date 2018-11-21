@@ -1,6 +1,8 @@
 var yo = require('yo-yo')
 var mapStream = require('mapbox-map-image-stream')
 var streamsaver = require('streamsaver')
+var store = require('browser-cache-blob-store')
+window.saveAs = require('file-saver')
 
 var settings = JSON.parse(window.localStorage.getItem('map-export-settings')) || {
   style: 'mapbox://styles/mapbox/streets-v9',
@@ -96,23 +98,42 @@ function onblur () {
   window.localStorage.setItem('map-export-settings', JSON.stringify(settings))
 }
 
-progress.querySelector('.progress-bar').style.transition = 'none'
+var progressBar = progress.querySelector('.progress-bar')
+progressBar.style.transition = 'none'
+
+var blobStore = store()
 
 function onExportClick (e) {
   e.preventDefault()
   button.style.display = 'none'
   yo.update(progress, getProgress(0))
-  var downloadStream = streamsaver.createWriteStream('map.png')
-  let writer = downloadStream.getWriter()
   var mapDiv = document.getElementById('map')
   var opts = Object.assign({}, settings, {
     bbox: settings.bbox.join(','),
     width: settings.width + 'mm',
     height: settings.height + 'mm'
   })
+  var prevProgress = 0
+  var ws = blobStore.createWriteStream('map-export', console.log).on('error', console.error)
   mapStream(settings.style, mapDiv, opts)
+    .on('error', console.error)
+    .on('progress', pct => {
+      if (pct - prevProgress > 0.01) {
+        console.log('progress', Math.floor(pct * 100) + '%')
+        prevProgress = pct
+      }
+      progressBar.style.width = Math.floor(pct * 100) + '%'
+    })
+    .pipe(ws)
+    .on('finish', download)
+}
+
+function download () {
+  console.log('starting download')
+  var downloadStream = streamsaver.createWriteStream('map.png')
+  var writer = downloadStream.getWriter()
+  blobStore.createReadStream('map-export')
     .on('data', data => writer.write(data))
-    .on('progress', pct => yo.update(progress, getProgress(Math.floor(pct * 100))))
     .on('end', () => writer.close())
 }
 
