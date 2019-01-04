@@ -134,11 +134,11 @@ var action = submitButton()
 
 var form = yo`<form>
 <h1>Map Printer</h1>
-<p>Export hi-res massive PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a>.</p>
+<p>Export massive hi-res PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a> without memory limits.</p>
 <div class="form-group">
   <input type="text" class="form-control" id="token" onblur="${onblur}" placeholder="Enter Mapbox Public Token" value="${settings.token || ''}">
   <small class="form-text text-muted">
-    Enter a valid <a href="https://www.mapbox.com/account/access-tokens" target="_blank">Mapbox access token</a>
+    <a href="https://www.mapbox.com/account/access-tokens" target="_blank">Mapbox access token</a>
   </small>
   <div class="invalid-feedback">
     It seems like this access token is invalid.
@@ -147,7 +147,7 @@ var form = yo`<form>
 <div class="form-group">
   <input type="text" class="form-control" id="style" onblur="${onblur}" placeholder="Enter mapbox style URL" value="${settings.style || ''}">
   <small class="form-text text-muted">
-    Enter a <a href="https://www.mapbox.com/help/define-style-url/" target="_blank">mapbox style URL</a>
+    <a href="https://www.mapbox.com/help/define-style-url/" target="_blank">Mapbox style url</a>
   </small>
   <div class="invalid-feedback">
     This style does not seem to work.
