@@ -65,6 +65,8 @@ function updateMap () {
     map = new mapboxgl.Map({
       container: mapDiv,
       style: settings.style,
+      dragRotate: false,
+      pitchWithRotate: false,
       attributionControl: false
     })
     map.addControl(nav, 'top-left')
