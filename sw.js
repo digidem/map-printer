@@ -13,7 +13,7 @@ self.addEventListener('fetch', function (event) {
   if (event.request.url.startsWith(location.origin + '/export')) {
     event.respondWith(async function () {
       // Try to get the response from a cache.
-      const cachedResponse = await self.caches.match('map.png');
+      const cachedResponse = await self.caches.match('map.png')
       // Return it if we found one.
       return new Response(cachedResponse.body, {
         headers: {
