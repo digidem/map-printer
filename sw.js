@@ -1,4 +1,4 @@
-/* global self,Response,location,fetch */
+/* global self,Response,location */
 
 self.addEventListener('install', function (event) {
   // The promise that skipWaiting() returns can be safely ignored.
@@ -10,18 +10,16 @@ self.addEventListener('activate', event => {
 })
 
 self.addEventListener('fetch', function (event) {
-  if (event.request.url.startsWith(location.origin + '/export')) {
-    event.respondWith(async function () {
-      // Try to get the response from a cache.
-      const cachedResponse = await self.caches.match('map.png')
-      // Return it if we found one.
-      return new Response(cachedResponse.body, {
-        headers: {
-          'Content-Type': 'application/octect-stream; charset=utf-8'
-        }
-      })
-    }())
-  } else {
-    event.respondWith(fetch(event.request))
-  }
+  if (!event.request.url.startsWith(location.origin + '/export')) return
+  event.respondWith(async function () {
+    // Try to get the response from a cache.
+    const cachedResponse = await self.caches.match('map.png')
+    // Return it if we found one.
+    return new Response(cachedResponse.body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octect-stream; charset=utf-8'
+      }
+    })
+  }())
 })
