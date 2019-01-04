@@ -53,6 +53,19 @@
           0 6px 6px rgba(0, 0, 0, 0.23);
         position: absolute;
       }
+      .alert-unsupported {
+        display: none;
+      }
+      body.unsupported #left, body.unsupported #right {
+        display: none;
+      }
+      body.unsupported .alert-unsupported {
+        display: block;
+      }
+      body.unsupported {
+        justify-content: center;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
@@ -114,6 +127,10 @@
         }
       }
     </style>
+    <div class="alert-unsupported alert alert-danger" role="alert">
+      Sorry, Map Printer isn't currently supported by your browser, Google
+      Chrome should work.
+    </div>
     <div id="left"></div>
     <div id="right"><div id="map" class="map"></div></div>
     <script src="bundle.js"></script>

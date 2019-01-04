@@ -17,6 +17,10 @@ if ('serviceWorker' in navigator) {
     })
 }
 
+if (!('caches' in window) || typeof ReadableStream === 'undefined') {
+  document.body.classList.add('unsupported')
+}
+
 var settings = JSON.parse(window.localStorage.getItem('map-export-settings')) || {
   style: 'mapbox://styles/mapbox/streets-v9',
   width: 297,
