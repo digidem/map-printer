@@ -5,20 +5,25 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "budo index.js:bundle.js --live",
-    "build": "mkdirp build && copyfiles index.html build && browserify index.js -o build/bundle.js"
+    "build": "mkdirp build && copyfiles index.html sw.js build && browserify index.js -g yo-yoify -o build/bundle.js"
   },
   "author": "Digital Democracy",
   "license": "MIT",
   "dependencies": {
-    "mapbox-map-image-stream": "^1.0.0",
-    "streamsaver": "^1.0.1",
+    "@turf/bbox-polygon": "^6.0.1",
+    "@turf/helpers": "^6.1.4",
+    "browser-cache-blob-store": "^1.1.0",
+    "mapbox-gl": "^0.49.0",
+    "mapbox-map-image-stream": "^2.1.0",
+    "viewport-mercator-project": "^6.1.0",
     "yo-yo": "^1.4.1"
   },
   "devDependencies": {
     "browserify": "^16.1.1",
     "budo": "^11.2.0",
     "copyfiles": "^2.0.0",
-    "mkdirp": "^0.5.1"
+    "mkdirp": "^0.5.1",
+    "yo-yoify": "^4.3.0"
   },
   "repository": {
     "type": "git",
