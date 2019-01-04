@@ -43,6 +43,7 @@ const bboxLayer = {
 var mapContainer = document.getElementById('right')
 var mapDiv = document.getElementById('map')
 var mapZoomPreview = yo`<span></span>`
+var nav = new mapboxgl.NavigationControl({ showCompass: false })
 var map
 var lastStyle = settings.style
 
@@ -66,6 +67,7 @@ function updateMap () {
       style: settings.style,
       attributionControl: false
     })
+    map.addControl(nav, 'top-left')
     map.fitBounds(bboxToBounds(settings.bbox), { duration: 0 })
     map.on('load', () => {
       updateMap()
