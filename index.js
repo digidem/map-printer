@@ -17,7 +17,8 @@ if ('serviceWorker' in navigator) {
     })
 }
 
-if (!('caches' in window) || typeof ReadableStream === 'undefined') {
+var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+if (!('caches' in window) || typeof ReadableStream === 'undefined' || isSafari) {
   document.body.classList.add('unsupported')
 }
 
@@ -262,6 +263,7 @@ function exportMap (e) {
   var ws = blobStore.createWriteStream('map.png', () => {
     var filename = `map-${JSON.stringify(settings.bbox)}-${settings.width}mmx${settings.height}mm-${settings.dpi}dpi.png`
     var downloadLink = yo`<a href="http://localhost:9966/export/${filename}"></a>`
+    console.log(downloadLink)
     let click = new window.MouseEvent('click')
     downloadLink.dispatchEvent(click)
     action = yo.update(action, submitButton())
