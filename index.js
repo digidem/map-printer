@@ -262,8 +262,7 @@ function exportMap (e) {
   var height = settings.height / 25.4 * settings.dpi
   var ws = blobStore.createWriteStream('map.png', () => {
     var filename = `map-${JSON.stringify(settings.bbox)}-${settings.width}mmx${settings.height}mm-${settings.dpi}dpi.png`
-    var downloadLink = yo`<a href="http://localhost:9966/export/${filename}"></a>`
-    console.log(downloadLink)
+    var downloadLink = yo`<a href="/export/${filename}"></a>`
     let click = new window.MouseEvent('click')
     downloadLink.dispatchEvent(click)
     action = yo.update(action, submitButton())
