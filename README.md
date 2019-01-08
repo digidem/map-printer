@@ -9,7 +9,7 @@ Download massive hi-res PNGs from Mapbox map styles without memory limits.
 ## Usage
 
 ```
-git clone git@github.com:digidem/map-printer.git
+git clone https://github.com/digidem/map-printer.git
 npm install
 npm start
 ```
