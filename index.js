@@ -5,6 +5,7 @@ var bboxPolygon = require('@turf/bbox-polygon').default
 var fc = require('@turf/helpers').featureCollection
 var fitBounds = require('viewport-mercator-project').fitBounds
 var store = require('browser-cache-blob-store')
+var pump = require('pump')
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js')
@@ -266,19 +267,22 @@ function exportMap (e) {
     let click = new window.MouseEvent('click')
     downloadLink.dispatchEvent(click)
     action = yo.update(action, submitButton())
-  }).on('error', console.error)
-  mapStream({
+  })
+
+  var maps = mapStream({
     token: settings.token,
     style: settings.style,
     bbox: settings.bbox,
     width: width,
     height: height,
     pixelRatio: settings.dpi / 96
+  }).on('progress', p => {
+    action = yo.update(action, renderProgress(p))
   })
-    .on('progress', p => {
-      action = yo.update(action, renderProgress(p))
-    })
-    .pipe(ws)
+
+  pump(maps, ws, function (err) {
+    if (err) console.error(err)
+  })
 }
 
 document.getElementById('left').appendChild(form)
