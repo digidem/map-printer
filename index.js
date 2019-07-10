@@ -144,7 +144,7 @@ var action = submitButton()
 
 var form = yo`<form>
 <h1>Map Printer</h1>
-<p>Export massive hi-res PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a> without memory limits.</p>
+<p>Export massive hi-res PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a>.</p>
 <div class="form-group">
   <input type="text" class="form-control" id="token" onblur="${onblur}" placeholder="Enter Mapbox Public Token" value="${settings.token || ''}">
   <small class="form-text text-muted">
@@ -194,8 +194,7 @@ var form = yo`<form>
 <div class="form-group">
   <input type="text" class="form-control" id="bbox" onblur="${onblur}" placeholder="Enter bounding box" value="${settings.bbox || ''}">
   <small class="form-text text-muted">
-    Comma-separated coordinates for bounds to include in exported area<br/>
-    <pre>West, South, East, North</pre>
+    Comma-separated coordinates for bounds fit within exported page: <pre style="display: inline;">West,South,East,North</pre>
   </small>
   <div class="invalid-feedback">
     Invalid bounding box, check you have the coordinate order correct
