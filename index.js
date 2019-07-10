@@ -31,6 +31,10 @@ var settings = JSON.parse(window.localStorage.getItem('map-export-settings')) ||
   previewBbox: true
 }
 
+// Always start with attribution and tos unchecked
+settings.tos = false
+settings.attribution = false
+
 const bboxLayer = {
   'id': 'bbox',
   'type': 'line',
@@ -145,14 +149,6 @@ var action = submitButton()
 var form = yo`<form>
 <h1>Map Printer</h1>
 <p>Export massive hi-res PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a>.</p>
-<p class="attribution">
-  <small class="text-muted">
-Use of this tool to export images of a Mapbox style is subject to the <a href="https://www.mapbox.com/tos/" target="_blank">Mapbox
-Terms of Service</a>. This tool is intended for noncommercial, non-profit, or
-educational uses only. To secure permission to print images of a Mapbox style
-for a commercial project, please <a href="https://www.mapbox.com/contact/sales/" target="_blank">contact Mapbox</a>.
-  </small>
-</p>
 <div class="form-group">
   <input type="text" class="form-control" id="token" onblur="${onblur}" placeholder="Enter Mapbox Public Token" value="${settings.token || ''}">
   <small class="form-text text-muted">
@@ -209,7 +205,7 @@ for a commercial project, please <a href="https://www.mapbox.com/contact/sales/"
   </div>
 </div>
 <div class="form-check form-group">
-  <input class="form-check-input" type="checkbox"  onchange="${onblur}" checked id="previewBbox">
+  <input class="form-check-input" type="checkbox"  onchange="${onblur}" checked="${settings.previewBbox}" id="previewBbox">
   <label class="form-check-label" for="previewBbox">
     Preview bounding box (<a href="#" onclick="${zoomToBbox}">zoom to</a>)
   </label>
@@ -226,7 +222,47 @@ for a commercial project, please <a href="https://www.mapbox.com/contact/sales/"
   </small>
 </div>
 ${mapZoomPreview}
+<div class="form-check form-group negative-margin-top reduced-line-height">
+  <input class="form-check-input" type="checkbox"  onchange="${onblur}" checked="${settings.tos}"  id="tos">
+  <label class="form-check-label " for="tos">
+  <small class="text-muted">
+  This printed map will be used for non-commercial, non-profit or educational use
+  in accordance with the <a href="https://www.mapbox.com/tos/" target="_blank">Mapbox
+  Terms of Service</a>.
+    </small>
+  </label>
+  <div class="invalid-feedback">
+    You must agree in order to export a map
+  </div>
+</div>
+<div class="form-check form-group negative-margin-top reduced-line-height">
+  <input class="form-check-input" type="checkbox"  onchange="${onblur}" checked="${settings.attribution}"  id="attribution">
+  <label class="form-check-label " for="attribution">
+  <small class="text-muted">
+  I will add attribution and the <a href="https://www.mapbox.com/about/press/brand-guidelines/" target="_blank">Mapbox logo</a>
+  to the printed map according to the Mapbox
+  <a href="https://docs.mapbox.com/help/how-mapbox-works/attribution/#static--print" target="_blank">
+  attribution guidelines for static print</a>.
+    </small>
+  </label>
+  <div class="invalid-feedback">
+    You must agree in order to export a map
+  </div>
+</div>
+<p>
+  <small class="text-muted">
+
+  </small>
+</p>
+<div class="form-group">
 ${action}
+</div>
+<p class="reduced-line-height">
+  <small class="text-muted">
+  To secure permission to print images of a Mapbox style
+  for a commercial project, please <a href="https://www.mapbox.com/contact/sales/" target="_blank">contact Mapbox</a>.
+  </small>
+</p>
 </form>`
 
 var renderProgress = (p) => {
@@ -253,10 +289,14 @@ function onblur () {
     style: form.style.value,
     bbox: form.bbox.value.split(/(?:,\s*)|(?:\s+)/g).map(parseFloat),
     previewBbox: form.previewBbox.checked,
+    tos: form.tos.checked,
+    attribution: form.attribution.checked,
     dpi: Number.parseInt(form.dpi.value),
     width: form.width.valueAsNumber,
     height: form.height.valueAsNumber
   }
+  if (settings.tos) form.tos.classList.remove('is-invalid')
+  if (settings.attribution) form.attribution.classList.remove('is-invalid')
   updateMap()
   window.localStorage.setItem('map-export-settings', JSON.stringify(settings))
 }
@@ -265,6 +305,11 @@ var blobStore = store()
 
 function exportMap (e) {
   e.preventDefault()
+  if (!settings.tos || !settings.attribution) {
+    if (!settings.tos) form.tos.classList.add('is-invalid')
+    if (!settings.attribution) form.attribution.classList.add('is-invalid')
+    return
+  }
   action = yo.update(action, renderProgress(null))
   var width = settings.width / 25.4 * settings.dpi
   var height = settings.height / 25.4 * settings.dpi
