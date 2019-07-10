@@ -145,6 +145,14 @@ var action = submitButton()
 var form = yo`<form>
 <h1>Map Printer</h1>
 <p>Export massive hi-res PNGs from <a href="https://www.mapbox.com/studio-manual/overview/map-styling/" target="_blank">Mapbox map styles</a>.</p>
+<p class="attribution">
+  <small class="text-muted">
+Use of this tool to export images of a Mapbox style is subject to the <a href="https://www.mapbox.com/tos/" target="_blank">Mapbox
+Terms of Service</a>. This tool is intended for noncommercial, non-profit, or
+educational uses only. To secure permission to print images of a Mapbox style
+for a commercial project, please <a href="https://www.mapbox.com/contact/sales/" target="_blank">contact Mapbox</a>.
+  </small>
+</p>
 <div class="form-group">
   <input type="text" class="form-control" id="token" onblur="${onblur}" placeholder="Enter Mapbox Public Token" value="${settings.token || ''}">
   <small class="form-text text-muted">
