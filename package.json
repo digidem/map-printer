@@ -10,10 +10,10 @@
   "author": "Digital Democracy",
   "license": "MIT",
   "dependencies": {
-    "@turf/bbox-polygon": "^6.0.1",
-    "@turf/helpers": "^6.1.4",
+    "@turf/bbox-polygon": "^6.4.0",
+    "@turf/helpers": "^6.4.0",
     "browser-cache-blob-store": "^1.1.1",
-    "mapbox-gl": "^1.1.0",
+    "mapbox-gl": "^1.13.1",
     "mapbox-map-image-stream": "^2.1.1",
     "pump": "^3.0.0",
     "viewport-mercator-project": "^6.1.1",
@@ -21,8 +21,8 @@
   },
   "devDependencies": {
     "browserify": "^16.3.0",
-    "budo": "^11.6.2",
-    "copyfiles": "^2.1.1",
+    "budo": "^11.6.4",
+    "copyfiles": "^2.4.1",
     "mkdirp": "^0.5.1",
     "yo-yoify": "^4.3.0"
   },
