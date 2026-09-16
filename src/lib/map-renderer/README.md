@@ -67,6 +67,10 @@ bottom-up), alpha dropped when `channels === 3`.
 render frame as soon as nothing is dirty. Renders are sequential: calling
 `render` while one is in flight rejects.
 
+The rect is CSS px while the result is device px, so a caller that also feeds
+`mosaic` — whose rects are output pixels — passes `mosaic` the `tileGrid` rects
+scaled by `pixelRatio` and `render` the unscaled ones.
+
 ### Errors
 
 MapLibre still fires `idle` when tiles or sources have failed, so the renderer
