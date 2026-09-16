@@ -32,8 +32,11 @@ rejected rather than rendered, because MapLibre would quietly shift the camera
 
 Tiles are as wide as the GPU allows (`map-renderer.maxTileSize`) but never
 wider than the viewport, so most exports are a single column. Their height is
-the largest that keeps one band — `cols × tileW × tileH × pixelRatio² × 3`
-bytes, the buffer `mosaic` holds — under 64 MiB. `tileSize` overrides both; it
+the largest that keeps every pixel buffer alive while a band is composed under
+64 MiB together: the band `mosaic` holds
+(`cols × tileW × tileH × pixelRatio² × 3` bytes), plus the tile `map-renderer`
+has just returned and the RGBA `readPixels` scratch it came out of
+(`tileW × tileH × pixelRatio² × (3 + 4)`). `tileSize` overrides both; it
 exists so the e2e tests can force a multi-tile grid at a size a test machine
 renders quickly, and the UI never passes it.
 

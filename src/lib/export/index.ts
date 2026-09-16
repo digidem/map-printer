@@ -42,8 +42,9 @@ export interface ExportResult {
 
 const CHANNELS = 3;
 
-/** One band of tiles is held in memory at a time; this caps it. */
-const BAND_BUDGET_BYTES = 64 * 1024 * 1024;
+/** Caps the pixel buffers alive while a band is composed: the band itself, the
+ *  tile the renderer just returned and its RGBA readPixels scratch. */
+const MEMORY_BUDGET_BYTES = 64 * 1024 * 1024;
 
 type ExportTile = {
   col: number;
@@ -133,8 +134,8 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
   return { bbox: viewportBbox(viewport), zoom: viewport.zoom };
 }
 
-/** The widest tile this GPU can render, and the tallest that keeps one band of
- *  them inside the memory budget. */
+/** The widest tile this GPU can render, and the tallest that keeps the buffers
+ *  live during a band inside the memory budget. */
 function chooseTileSize(
   cssWidth: number,
   cssHeight: number,
@@ -143,13 +144,14 @@ function chooseTileSize(
   const max = maxTileSize(pixelRatio);
   const width = Math.min(max.width, cssWidth);
   const cols = Math.ceil(cssWidth / width);
-  const bandRowBytes = cols * width * pixelRatio * pixelRatio * CHANNELS;
+  const devicePxPerRow = width * pixelRatio * pixelRatio;
+  const bytesPerRow = devicePxPerRow * (CHANNELS * cols + CHANNELS + 4);
   const height = Math.max(
     1,
     Math.min(
       max.height,
       cssHeight,
-      Math.floor(BAND_BUDGET_BYTES / bandRowBytes),
+      Math.floor(MEMORY_BUDGET_BYTES / bytesPerRow),
     ),
   );
   return { width, height };
