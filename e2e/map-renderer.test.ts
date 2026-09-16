@@ -23,6 +23,8 @@ const chromiumArgs =
 const SQUARE: Bbox = [-1, -1, 1, 1];
 /** A view that places the square in the upper half of the tile. */
 const VIEW_BBOX: Bbox = [-4, -6, 4, 2];
+/** Twice as wide: two tiles, with the square inside the right-hand one. */
+const WIDE_VIEW_BBOX: Bbox = [-12, -6, 4, 2];
 const TILE_SIZE = { width: 256, height: 256 };
 const RED = [255, 0, 0];
 const WHITE = [255, 255, 255];
@@ -61,8 +63,14 @@ function projectedRect(
   };
 }
 
-function pixelAt(pixels: Uint8Array, width: number, x: number, y: number) {
-  const i = (Math.round(y) * width + Math.round(x)) * 3;
+function pixelAt(
+  pixels: Uint8Array,
+  width: number,
+  x: number,
+  y: number,
+  channels: 3 | 4 = 3,
+) {
+  const i = (Math.round(y) * width + Math.round(x)) * channels;
   return [pixels[i], pixels[i + 1], pixels[i + 2]];
 }
 
@@ -72,39 +80,82 @@ function expectColor(actual: number[], expected: number[]) {
   }
 }
 
-async function renderTile(
+interface RenderOptions {
+  style: string | StyleSpecification;
+  pixelRatio: number;
+  tileSize?: { width: number; height: number };
+  channels?: 3 | 4;
+  tiles: TileRect[];
+  zoom: number;
+  renderTimeoutMs?: number;
+}
+
+/** Renders every tile from one renderer, as the export layer does. */
+async function renderTiles(
   page: Page,
-  opts: {
-    style: string | StyleSpecification;
-    pixelRatio: number;
-    tile: TileRect;
-    zoom: number;
-    renderTimeoutMs?: number;
-  },
-): Promise<Uint8Array> {
+  opts: RenderOptions,
+): Promise<Uint8Array[]> {
   // Serialized by hand: StyleSpecification is too deep for evaluate's arg typing.
-  const pixels = await page.evaluate(async (json: string) => {
+  const rendered = await page.evaluate(async (json: string) => {
     const opts: {
       style: string | import("maplibre-gl").StyleSpecification;
       pixelRatio: number;
-      tile: import("../src/lib/viewport/index.ts").TileRect;
+      tileSize?: { width: number; height: number };
+      channels?: 3 | 4;
+      tiles: import("../src/lib/viewport/index.ts").TileRect[];
       zoom: number;
       renderTimeoutMs?: number;
     } = JSON.parse(json);
     const renderer = await window.mapPrinter.createMapRenderer({
       style: opts.style,
       pixelRatio: opts.pixelRatio,
-      tileSize: { width: 256, height: 256 },
-      channels: 3,
+      tileSize: opts.tileSize ?? { width: 256, height: 256 },
+      channels: opts.channels ?? 3,
       renderTimeoutMs: opts.renderTimeoutMs,
     });
     try {
-      return await renderer.render(opts.tile, opts.zoom);
+      const out: Uint8Array[] = [];
+      for (const tile of opts.tiles) {
+        out.push(await renderer.render(tile, opts.zoom));
+      }
+      return out;
     } finally {
       renderer.destroy();
     }
   }, JSON.stringify(opts));
-  return new Uint8Array(pixels);
+  return rendered.map((pixels) => new Uint8Array(pixels));
+}
+
+async function renderTile(
+  page: Page,
+  opts: Omit<RenderOptions, "tiles"> & { tile: TileRect },
+): Promise<Uint8Array> {
+  const { tile, ...rest } = opts;
+  const [pixels] = await renderTiles(page, { ...rest, tiles: [tile] });
+  return pixels;
+}
+
+async function createRenderer(
+  page: Page,
+  opts: {
+    style: string | StyleSpecification;
+    pixelRatio: number;
+    tileSize: { width: number; height: number };
+  },
+): Promise<void> {
+  await page.evaluate(async (json: string) => {
+    const opts: {
+      style: string | import("maplibre-gl").StyleSpecification;
+      pixelRatio: number;
+      tileSize: { width: number; height: number };
+    } = JSON.parse(json);
+    const renderer = await window.mapPrinter.createMapRenderer({
+      ...opts,
+      channels: 3,
+      renderTimeoutMs: 20_000,
+    });
+    renderer.destroy();
+  }, JSON.stringify(opts));
 }
 
 describe("chromium", () => {
@@ -199,6 +250,80 @@ describe("chromium", () => {
       }
     },
   );
+
+  test("renders both tiles of a grid from one renderer", async () => {
+    const v = fitBounds(WIDE_VIEW_BBOX, 512, 256);
+    const tiles = tileGrid(v, TILE_SIZE);
+    expect(tiles).toHaveLength(2);
+
+    const rendered = await renderTiles(page, {
+      style: fixtureStyle,
+      pixelRatio: 1,
+      tiles,
+      zoom: v.zoom,
+    });
+
+    const square = projectedRect(SQUARE, v, tiles[1], 1);
+    const margin = 3;
+    expect(square.left).toBeGreaterThan(margin);
+    expect(square.right).toBeLessThan(tiles[1].width - margin);
+    const midX = (square.left + square.right) / 2;
+    const midY = (square.top + square.bottom) / 2;
+
+    expectColor(pixelAt(rendered[1], tiles[1].width, midX, midY), RED);
+    // The square is in the right-hand tile only, so the left one stays white.
+    for (const [x, y] of [
+      [0, 0],
+      [tiles[0].width - 1, TILE_SIZE.height - 1],
+      [tiles[0].width / 2, midY],
+      [tiles[0].width - 1, midY],
+    ]) {
+      expectColor(pixelAt(rendered[0], tiles[0].width, x, y), WHITE);
+    }
+  });
+
+  test("renders RGBA with an opaque alpha channel", async () => {
+    const v = fitBounds(VIEW_BBOX, 256, 256);
+    const [tile] = tileGrid(v, TILE_SIZE);
+    const pixels = await renderTile(page, {
+      style: fixtureStyle,
+      pixelRatio: 1,
+      channels: 4,
+      tile,
+      zoom: v.zoom,
+    });
+    expect(pixels).toHaveLength(tile.width * tile.height * 4);
+    for (let i = 3; i < pixels.length; i += 4) {
+      expect(pixels[i]).toBe(255);
+    }
+
+    const square = projectedRect(SQUARE, v, tile, 1);
+    const midX = (square.left + square.right) / 2;
+    const midY = (square.top + square.bottom) / 2;
+    expectColor(pixelAt(pixels, tile.width, midX, midY, 4), RED);
+    expectColor(pixelAt(pixels, tile.width, 0, tile.height - 1, 4), WHITE);
+  });
+
+  test("renders a canvas larger than MapLibre's default maxCanvasSize", async () => {
+    // 5120×2048 device px, above the 4096×4096 default.
+    await expect(
+      createRenderer(page, {
+        style: fixtureStyle,
+        pixelRatio: 2,
+        tileSize: { width: 2560, height: 1024 },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("rejects a tile larger than the GPU can render", async () => {
+    await expect(
+      createRenderer(page, {
+        style: fixtureStyle,
+        pixelRatio: 4,
+        tileSize: { width: 8192, height: 8192 },
+      }),
+    ).rejects.toThrow(/canvas for a 32768×32768 tile/);
+  });
 
   test("rejects with a timeout when a tile source never responds", async () => {
     const v = fitBounds(VIEW_BBOX, 256, 256);
