@@ -3,7 +3,9 @@ import {
   type Bbox,
   type Viewport,
   MAX_LATITUDE,
+  clampBbox,
   fitBounds,
+  fitsWorld,
   isValidBbox,
   mmToPx,
   project,
@@ -99,6 +101,19 @@ describe("isValidBbox", () => {
     expect(isValidBbox([-1, -1, 181, 1])).toBe(false);
     expect(isValidBbox([-1, -90, 1, 1])).toBe(false);
     expect(isValidBbox([-1, -1, 1, 90])).toBe(false);
+    expect(isValidBbox([-180, -90, 180, 90])).toBe(false);
+  });
+});
+
+describe("clampBbox", () => {
+  it("makes a whole-world bbox valid", () => {
+    const clamped = clampBbox([-180, -90, 180, 90]);
+    expect(clamped).toEqual([-180, -MAX_LATITUDE, 180, MAX_LATITUDE]);
+    expect(isValidBbox(clamped)).toBe(true);
+  });
+
+  it("leaves latitudes within the Mercator limit alone", () => {
+    expect(clampBbox([-1, -1, 1, 1])).toEqual([-1, -1, 1, 1]);
   });
 });
 
@@ -191,6 +206,24 @@ describe("fitBounds", () => {
     expect(() => fitBounds([1, 1, 1, 1], 100, 100)).toThrow(TypeError);
     expect(() => fitBounds([-1, -1, 1, 1], 0, 100)).toThrow(TypeError);
     expect(() => fitBounds([-1, -1, 1, 1], 100, -5)).toThrow(TypeError);
+  });
+});
+
+describe("fitsWorld", () => {
+  it("is true for a viewport that fits inside the Mercator world", () => {
+    expect(fitsWorld(fitBounds([-180, -MAX_LATITUDE, 180, MAX_LATITUDE], 512, 512))).toBe(true);
+    expect(fitsWorld(fitBounds([-10, -10, 10, 10], 793, 1122))).toBe(true);
+  });
+
+  it("is false for a width-limited whole-world fit on a portrait page", () => {
+    const v = fitBounds([-180, -MAX_LATITUDE, 180, MAX_LATITUDE], 793, 1122);
+    expect(v.height).toBeGreaterThan(512 * 2 ** v.zoom);
+    expect(fitsWorld(v)).toBe(false);
+  });
+
+  it("is false when the viewport hangs off only one pole", () => {
+    const v = fitBounds([-20, 60, 20, MAX_LATITUDE], 400, 400);
+    expect(fitsWorld({ ...v, height: v.height * 4 })).toBe(false);
   });
 });
 
@@ -324,9 +357,29 @@ describe("mmToPx", () => {
     expect(mmToPx(297, 96)).toBe(1123);
   });
 
+  it("rounds to a whole multiple of the pixel ratio", () => {
+    for (const dpi of [96, 192, 288, 384]) {
+      const pixelRatio = dpi / 96;
+      for (const mm of [210, 297, 100, 1189]) {
+        const px = mmToPx(mm, dpi, pixelRatio);
+        expect(Number.isInteger(px / pixelRatio)).toBe(true);
+        expect(Math.abs(px - (mm / 25.4) * dpi)).toBeLessThanOrEqual(
+          pixelRatio / 2,
+        );
+      }
+    }
+  });
+
+  it("never rounds down to zero pixels", () => {
+    expect(mmToPx(0.01, 96)).toBe(1);
+    expect(mmToPx(0.01, 192, 2)).toBe(2);
+  });
+
   it("rejects non-positive input", () => {
     expect(() => mmToPx(0, 96)).toThrow(TypeError);
     expect(() => mmToPx(210, 0)).toThrow(TypeError);
     expect(() => mmToPx(Number.NaN, 96)).toThrow(TypeError);
+    expect(() => mmToPx(210, 192, 0)).toThrow(TypeError);
+    expect(() => mmToPx(210, 192, 1.5)).toThrow(TypeError);
   });
 });

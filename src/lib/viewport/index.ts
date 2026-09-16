@@ -77,6 +77,10 @@ export function isValidBbox(b: unknown): b is Bbox {
   return true;
 }
 
+export function clampBbox(b: Bbox): Bbox {
+  return [b[0], clampLatitude(b[1]), b[2], clampLatitude(b[3])];
+}
+
 export function project(lngLat: LngLat, zoom: number): [number, number] {
   const size = worldSize(zoom);
   return [mercatorX(lngLat[0]) * size, mercatorY(lngLat[1]) * size];
@@ -126,6 +130,16 @@ export function viewportBbox(v: Viewport): Bbox {
   return [west, south, east, north];
 }
 
+export function fitsWorld(v: Viewport): boolean {
+  const size = worldSize(v.zoom);
+  const [, cy] = project(v.center, v.zoom);
+  const epsilon = size * 1e-9;
+  return (
+    cy - v.height / 2 >= mercatorY(MAX_LATITUDE) * size - epsilon &&
+    cy + v.height / 2 <= mercatorY(-MAX_LATITUDE) * size + epsilon
+  );
+}
+
 export function tileGrid(
   v: Viewport,
   tile: { width: number; height: number },
@@ -166,12 +180,14 @@ export function tileGrid(
   return tiles;
 }
 
-export function mmToPx(mm: number, dpi: number): number {
+export function mmToPx(mm: number, dpi: number, pixelRatio = 1): number {
   if (!isFiniteNumber(mm) || mm <= 0) {
     throw new TypeError(`mm must be a positive number, got ${mm}`);
   }
   if (!isFiniteNumber(dpi) || dpi <= 0) {
     throw new TypeError(`dpi must be a positive number, got ${dpi}`);
   }
-  return Math.round((mm / MM_PER_INCH) * dpi);
+  assertPositiveInteger(pixelRatio, "pixel ratio");
+  const cssPx = Math.max(1, Math.round((mm / MM_PER_INCH) * dpi / pixelRatio));
+  return cssPx * pixelRatio;
 }
