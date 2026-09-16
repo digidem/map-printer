@@ -177,16 +177,21 @@ export async function createMapRenderer(
         await new Promise<void>((resolve, reject) => {
           const onIdle = () => {
             finish();
-            // Read inside the idle handler, before a later frame can repaint.
-            gl.readPixels(
-              0,
-              canvasHeight - height,
-              width,
-              height,
-              gl.RGBA,
-              gl.UNSIGNED_BYTE,
-              scratch,
-            );
+            try {
+              // Read inside the idle handler, before a later frame repaints.
+              gl.readPixels(
+                0,
+                canvasHeight - height,
+                width,
+                height,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                scratch,
+              );
+            } catch (error) {
+              reject(error instanceof Error ? error : new Error(String(error)));
+              return;
+            }
             resolve();
           };
           const timer = setTimeout(
