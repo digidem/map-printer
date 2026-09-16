@@ -16,7 +16,7 @@ function pixels(width: number, height: number, channels: 3 | 4): Uint8Array {
   return data;
 }
 
-function concat(parts: Uint8Array[]): Uint8Array {
+function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;
@@ -35,6 +35,28 @@ async function collect(readable: ReadableStream<Uint8Array>): Promise<Uint8Array
     if (done) return parts;
     parts.push(value);
   }
+}
+
+async function inflate(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
+  const stream = new DecompressionStream("deflate");
+  const output = collect(stream.readable);
+  const writer = stream.writable.getWriter();
+  await writer.write(data);
+  await writer.close();
+  return concat(await output);
+}
+
+function idatPayload(png: Uint8Array): Uint8Array<ArrayBuffer> {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  const parts: Uint8Array[] = [];
+  for (let offset = 8; offset < png.length; ) {
+    const length = view.getUint32(offset);
+    if (new TextDecoder().decode(png.subarray(offset + 4, offset + 8)) === "IDAT") {
+      parts.push(png.subarray(offset + 8, offset + 8 + length));
+    }
+    offset += 12 + length;
+  }
+  return concat(parts);
 }
 
 async function feed(
@@ -75,6 +97,21 @@ describe("createPngEncoder", () => {
         expect(new Uint8Array(decoded.data as Uint8Array)).toEqual(data);
       });
     }
+  }
+
+  for (const [filter, filterByte] of [
+    ["none", 0],
+    ["sub", 1],
+  ] as const) {
+    it(`emits filter byte ${filterByte} for filter "${filter}"`, async () => {
+      const [width, height, channels] = [11, 7, 3] as const;
+      const data = pixels(width, height, channels);
+      const png = concat(await encode(data, { width, height, channels, filter }));
+      const raw = await inflate(idatPayload(png));
+      const stride = width * channels + 1;
+      expect(raw.length).toBe(height * stride);
+      for (let y = 0; y < height; y++) expect(raw[y * stride]).toBe(filterByte);
+    });
   }
 
   it("defaults to the sub filter", async () => {
@@ -126,15 +163,7 @@ describe("createPngEncoder", () => {
   it("streams a 2000x2000 image without buffering the whole compressed file", async () => {
     const [width, height, channels] = [2000, 2000, 3] as const;
     const encoder = createPngEncoder({ width, height, channels });
-    let seed = 1;
-    const noisyRow = () => {
-      const row = new Uint8Array(width * channels);
-      for (let i = 0; i < row.length; i++) {
-        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-        row[i] = (seed >>> 16) & 0xff;
-      }
-      return row;
-    };
+    const noisyRow = () => crypto.getRandomValues(new Uint8Array(width * channels));
 
     let maxQueued = 0;
     const reader = encoder.readable.getReader();
@@ -156,8 +185,8 @@ describe("createPngEncoder", () => {
 
     const { bytes, idats } = await output;
     expect(bytes).toBeGreaterThan(0);
-    expect(idats).toBeGreaterThan(1);
-    expect(maxQueued).toBeLessThan(4 * 1024 * 1024);
+    expect(idats).toBeGreaterThan(20);
+    expect(maxQueued).toBeLessThan(256 * 1024);
   }, 60_000);
 
   it("errors when too few bytes arrive", async () => {
