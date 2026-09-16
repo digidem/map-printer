@@ -12,6 +12,11 @@ const DOWNLOAD_PATH = "/_download/";
 const DOWNLOAD_PROTOCOL = 1;
 const DOWNLOAD_START_TIMEOUT_MS = 5_000;
 
+const NO_WORKER_MESSAGE =
+  "This browser cannot download without a service worker";
+
+let registration: Promise<ServiceWorkerRegistration> | undefined;
+
 export interface DownloadOptions {
   filename: string;
   contentType: string;
@@ -26,9 +31,11 @@ export interface Download {
 export function registerDownloadWorker(): void {
   if (!("serviceWorker" in navigator)) return;
   // `updateViaCache: 'none'` bypasses the browser's 24h HTTP-cache rule for sw.js.
-  navigator.serviceWorker
-    .register("/sw.js", { updateViaCache: "none" })
-    .then((registration) => registration.update())
+  registration = navigator.serviceWorker.register("/sw.js", {
+    updateViaCache: "none",
+  });
+  registration
+    .then((reg) => reg.update())
     .catch((err) => console.warn("SW registration failed", err));
   // Messages from the worker are queued until the page asks for them, and the
   // download handshake below listens with addEventListener.
@@ -37,19 +44,21 @@ export function registerDownloadWorker(): void {
 }
 
 /** Resolves once a service worker controls the page, which is when a download
- *  can be started. */
+ *  can be started; rejects if registering one failed, because no
+ *  `controllerchange` is ever coming then. */
 export function downloadReady(): Promise<void> {
   if (!("serviceWorker" in navigator)) {
-    return Promise.reject(
-      new Error("This browser cannot download without a service worker"),
-    );
+    return Promise.reject(new Error(NO_WORKER_MESSAGE));
   }
   if (navigator.serviceWorker.controller) return Promise.resolve();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     navigator.serviceWorker.addEventListener(
       "controllerchange",
       () => resolve(),
       { once: true },
+    );
+    registration?.catch((err) =>
+      reject(new Error(`${NO_WORKER_MESSAGE}: ${err}`)),
     );
   });
 }

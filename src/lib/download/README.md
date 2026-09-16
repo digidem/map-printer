@@ -46,4 +46,6 @@ download protocol.
 
 A fresh page load is not controlled by the worker until it claims the client,
 and a download started before then cannot work — `downloadReady()` resolves at
-that point, and the UI keeps Export disabled until it does.
+that point, and the UI keeps Export disabled until it does. If registration
+itself failed (no `sw.js`, or plain http off localhost) no controller is ever
+coming, so `downloadReady()` rejects instead of waiting for one.
