@@ -103,4 +103,26 @@ describe("chromium app", () => {
 
     await page.waitForSelector('[data-message="success"]');
   });
+
+  test("cancelling an export restores the form", async () => {
+    // Held up so the export is certain to still be running when Cancel is hit.
+    await page.route(fixtureStyle, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await route.continue();
+    });
+    try {
+      await page.click("#export");
+      await page.waitForSelector('[role="progressbar"]');
+      await page.click("#cancel");
+
+      await page.waitForSelector('[data-message="error"]');
+      expect(await page.textContent('[data-message="error"]')).toContain(
+        "cancelled",
+      );
+      await page.waitForSelector('[role="progressbar"]', { state: "detached" });
+      await page.waitForSelector("#export:not([disabled])");
+    } finally {
+      await page.unroute(fixtureStyle);
+    }
+  });
 });
