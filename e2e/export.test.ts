@@ -251,4 +251,74 @@ describe("chromium", () => {
       );
     }
   });
+
+  test("aborting mid-export fails the download", async () => {
+    const request: ExportRequest = {
+      style: fixtureStyle,
+      bbox: TIGHT_BBOX,
+      widthPx: 900,
+      heightPx: 700,
+      pixelRatio: 2,
+      filename: "aborted.png",
+      tileSize: { width: 150, height: 120 },
+    };
+    const [download, message] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      page.evaluate(async (json: string) => {
+        const opts = JSON.parse(json) as ExportRequest;
+        const controller = new AbortController();
+        try {
+          await window.mapPrinter.exportMap({
+            ...opts,
+            signal: controller.signal,
+            onProgress: () => controller.abort(new Error("cancelled by test")),
+          });
+          return "resolved";
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      }, JSON.stringify(request)),
+    ]);
+
+    expect(message).toBe("cancelled by test");
+    expect(await download.failure()).not.toBeNull();
+    expect(
+      await page.evaluate(() => document.querySelectorAll("iframe").length),
+    ).toBe(0);
+
+    // A wedged port or a sink left closed only shows up on the next export.
+    const { png } = await exportPng({
+      style: fixtureStyle,
+      bbox: VIEW_BBOX,
+      widthPx: 320,
+      heightPx: 240,
+      pixelRatio: 1,
+      filename: "after-abort.png",
+    });
+    expect(png.width).toBe(320);
+  });
+
+  test("a style that 404s fails the download rather than truncating it", async () => {
+    const [download, message] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      page.evaluate(async () => {
+        try {
+          await window.mapPrinter.exportMap({
+            style: "/fixtures/no-such-style.json",
+            bbox: [-4, -3, 4, 3],
+            widthPx: 320,
+            heightPx: 240,
+            pixelRatio: 1,
+            filename: "missing-style.png",
+          });
+          return "resolved";
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      }),
+    ]);
+
+    expect(message).not.toBe("resolved");
+    expect(await download.failure()).not.toBeNull();
+  });
 });
