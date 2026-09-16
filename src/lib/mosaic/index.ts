@@ -7,26 +7,28 @@ export type MosaicTile = {
   height: number;
 };
 
-export type MosaicOptions = {
+export type MosaicOptions<T extends MosaicTile = MosaicTile> = {
   width: number;
   height: number;
   channels: 3 | 4;
-  tiles: readonly MosaicTile[];
-  render: (tile: MosaicTile) => Promise<Uint8Array>;
+  tiles: readonly T[];
+  render: (tile: T) => Promise<Uint8Array>;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
 };
 
-type Band = { tiles: readonly MosaicTile[]; height: number };
+type Band<T extends MosaicTile> = { tiles: readonly T[]; height: number };
 
 const CHUNK_TARGET_BYTES = 256 * 1024;
 
-export function createMosaic(opts: MosaicOptions): ReadableStream<Uint8Array> {
+export function createMosaic<T extends MosaicTile>(
+  opts: MosaicOptions<T>,
+): ReadableStream<Uint8Array> {
   const { width, channels, render, onProgress, signal } = opts;
   const rowBytes = width * channels;
   const rowsPerChunk = Math.max(1, Math.floor(CHUNK_TARGET_BYTES / rowBytes));
 
-  let bands: Band[] = [];
+  let bands: Band<T>[] = [];
   let bandIndex = 0;
   let band = new Uint8Array(0);
   let bandRows = 0;
@@ -39,7 +41,13 @@ export function createMosaic(opts: MosaicOptions): ReadableStream<Uint8Array> {
     abortListener = undefined;
   }
 
-  async function renderBand(next: Band) {
+  function stop() {
+    stopped = true;
+    band = new Uint8Array(0);
+    unlisten();
+  }
+
+  async function renderBand(next: Band<T>) {
     const buf = new Uint8Array(rowBytes * next.height);
     for (const tile of next.tiles) {
       if (stopped) return;
@@ -88,44 +96,52 @@ export function createMosaic(opts: MosaicOptions): ReadableStream<Uint8Array> {
     },
 
     async pull(controller) {
-      if (rowsSent === bandRows) {
-        if (bandIndex === bands.length) {
-          unlisten();
-          controller.close();
-          return;
+      try {
+        if (rowsSent === bandRows) {
+          if (bandIndex === bands.length) {
+            unlisten();
+            controller.close();
+            return;
+          }
+          await renderBand(bands[bandIndex]);
+          if (stopped) return;
+          bandIndex++;
+          onProgress?.(bandIndex / bands.length);
         }
-        await renderBand(bands[bandIndex]);
-        if (stopped) return;
-        bandIndex++;
-        onProgress?.(bandIndex / bands.length);
+        const rows = Math.min(rowsPerChunk, bandRows - rowsSent);
+        const from = rowsSent * rowBytes;
+        controller.enqueue(band.slice(from, from + rows * rowBytes));
+        rowsSent += rows;
+      } catch (err) {
+        stop();
+        throw err;
       }
-      const rows = Math.min(rowsPerChunk, bandRows - rowsSent);
-      const from = rowsSent * rowBytes;
-      controller.enqueue(band.slice(from, from + rows * rowBytes));
-      rowsSent += rows;
     },
 
     cancel() {
-      stopped = true;
-      band = new Uint8Array(0);
-      unlisten();
+      stop();
     },
   });
 }
 
-function planBands({ width, height, channels, tiles }: MosaicOptions): Band[] {
+function planBands<T extends MosaicTile>({
+  width,
+  height,
+  channels,
+  tiles,
+}: MosaicOptions<T>): Band<T>[] {
   if (!isPositiveInt(width) || !isPositiveInt(height)) {
     throw new RangeError(`width and height must be positive integers`);
   }
   if (channels !== 3 && channels !== 4) {
     throw new RangeError(`channels must be 3 or 4, got ${channels}`);
   }
-  const bands: Band[] = [];
+  const bands: Band<T>[] = [];
   let y = 0;
   let i = 0;
   while (i < tiles.length) {
     const row = bands.length;
-    const bandTiles: MosaicTile[] = [];
+    const bandTiles: T[] = [];
     let x = 0;
     let bandHeight = 0;
     for (; i < tiles.length && tiles[i].row === row; i++) {

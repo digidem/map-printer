@@ -6,8 +6,8 @@ a time, as a pull-based `ReadableStream`.
 ```ts
 createMosaic(opts: {
   width: number; height: number; channels: 3 | 4;
-  tiles: readonly MosaicTile[];                     // row-major
-  render: (tile: MosaicTile) => Promise<Uint8Array>; // tile.width*tile.height*channels bytes, top-down
+  tiles: readonly T[];                     // row-major, T extends MosaicTile
+  render: (tile: T) => Promise<Uint8Array>; // tile.width*tile.height*channels bytes, top-down
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
 }): ReadableStream<Uint8Array>
@@ -15,8 +15,9 @@ createMosaic(opts: {
 type MosaicTile = { col: number; row: number; x: number; y: number; width: number; height: number };
 ```
 
-`MosaicTile` is structural, so `viewport.tileGrid()` rects (which carry an extra
-`center`) fit without this module importing `viewport`. The rect fields are in
+The tile type is a generic parameter constrained to `MosaicTile`, so
+`viewport.tileGrid()` rects (which carry an extra `center`) reach `render`
+with that field intact, without this module importing `viewport`. The rect fields are in
 output pixels, and the module is otherwise unit-agnostic.
 
 ## Behaviour
