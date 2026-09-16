@@ -47,6 +47,7 @@ export class PreviewMap extends LightElement {
     bbox: { attribute: false },
     showBbox: { type: Boolean },
     aspect: { type: Number },
+    usesToken: { type: Boolean },
   };
 
   declare mapStyle: string | StyleSpecification | null;
@@ -54,12 +55,16 @@ export class PreviewMap extends LightElement {
   declare bbox: Bbox;
   declare showBbox: boolean;
   declare aspect: number;
+  /** Whether the current style is a Mapbox one, so a rejected request is the
+   *  token's fault rather than the style's. */
+  declare usesToken: boolean;
 
   /** Owned by MapLibre, so it is created once and interpolated into the
    *  template rather than rendered by Lit. */
   private container = document.createElement("div");
   private map?: MapLibreMap;
   private appliedStyle: string | StyleSpecification | null = null;
+  private styleLoaded = false;
   private resizeObserver?: ResizeObserver;
 
   constructor() {
@@ -69,6 +74,7 @@ export class PreviewMap extends LightElement {
     this.bbox = [-180, -85, 180, 85];
     this.showBbox = true;
     this.aspect = 297 / 210;
+    this.usesToken = false;
     this.container.className = "shadow-lg";
   }
 
@@ -151,11 +157,13 @@ export class PreviewMap extends LightElement {
       return;
     }
     this.appliedStyle = this.mapStyle;
+    this.styleLoaded = false;
     this.map.setStyle(this.mapStyle, { diff: false });
   }
 
   private onStyleLoad() {
     if (!this.map) return;
+    this.styleLoaded = true;
     if (!this.map.getSource(BBOX_SOURCE)) {
       this.map.addSource(BBOX_SOURCE, {
         type: "geojson",
@@ -178,19 +186,22 @@ export class PreviewMap extends LightElement {
     source?.setData(this.showBbox ? bboxFeatures(this.bbox) : emptyFeatures());
   }
 
-  /** A style that fails to load leaves the map in place and marks the field
-   *  that is wrong instead; a tile that fails is not the user's mistake. */
+  /** Marks the field that is wrong instead of tearing the map down, with
+   *  `map-renderer`'s classification: a source error is a tile, and non-source
+   *  errors after `style.load` leave a map that still renders. */
   private onMapError(event: ErrorEvent & { sourceId?: string }) {
+    if (event.sourceId !== undefined || this.styleLoaded) {
+      console.warn("Preview map error", event.error);
+      return;
+    }
     const status = (event.error as { status?: number }).status;
-    if (status === 401 || status === 403) {
+    if (this.usesToken && (status === 401 || status === 403)) {
       this.emitStyleError("token", "This access token was rejected.");
-    } else if (!event.sourceId) {
+    } else {
       this.emitStyleError(
         "style",
         `This style could not be loaded: ${event.error.message}`,
       );
-    } else {
-      console.warn("Preview map error", event.error);
     }
   }
 

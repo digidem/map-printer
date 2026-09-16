@@ -119,12 +119,12 @@ function start(app: HTMLElement) {
         "This is not a map style, TileJSON or tile URL that can be loaded.";
       return;
     }
+    form.styleInput = input;
+    preview.usesToken = input.kind === "mapbox";
     if (input.kind === "mapbox" && !(mapboxToken || input.ref.accessToken)) {
-      form.styleInput = input;
       form.tokenError = "This style needs a Mapbox access token.";
       return;
     }
-    form.styleInput = input;
     preview.transformRequest = transformRequestFor(input, mapboxToken);
     preview.mapStyle = buildStyle(input, { mapboxToken });
   }
