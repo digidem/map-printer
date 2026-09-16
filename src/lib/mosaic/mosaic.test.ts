@@ -131,6 +131,21 @@ describe("createMosaic", () => {
     expect(fractions).toEqual([1 / 3, 2 / 3, 1]);
   });
 
+  it("renders no more than one band ahead of the consumer", async () => {
+    const rendered: number[] = [];
+    const render = vi.fn(async (tile: MosaicTile) => {
+      rendered.push(tile.row);
+      await flush();
+      return fakeRender(3)(tile);
+    });
+    const reader = mosaicFor([2, 2], [2, 2, 2, 2], 3, { render }).getReader();
+    await reader.read();
+    await flush();
+    await flush();
+    expect([...new Set(rendered)]).toEqual([0, 1]);
+    await reader.cancel();
+  });
+
   it("does not render further bands after the consumer cancels", async () => {
     const rendered: number[] = [];
     const render = vi.fn(async (tile: MosaicTile) => {
