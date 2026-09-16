@@ -64,15 +64,20 @@ function start(app: HTMLElement) {
 
   form.addEventListener("settings-change", (event) => {
     const next = (event as CustomEvent<Settings>).detail;
-    const styleChanged =
-      next.style !== settings.style || next.mapboxToken !== settings.mapboxToken;
+    const styleChanged = next.style !== settings.style;
+    const tokenChanged = next.mapboxToken !== settings.mapboxToken;
     settings = next;
     saveSettings(settings);
     preview.bbox = settings.bbox;
     preview.showBbox = settings.previewBbox;
     preview.aspect = settings.width / settings.height;
-    if (styleChanged) {
-      clearStyle();
+    if (styleChanged || tokenChanged) {
+      // Dropping `styleInput` unmounts the token field, so a token edit keeps
+      // the resolved input and only the style text clears it.
+      if (styleChanged) form.styleInput = null;
+      form.styleError = null;
+      form.tokenError = null;
+      form.attribution = [];
       clearTimeout(resolveTimer);
       resolveTimer = setTimeout(() => void resolveStyle(), RESOLVE_DELAY_MS);
     }
@@ -103,13 +108,6 @@ function start(app: HTMLElement) {
   );
 
   void resolveStyle();
-
-  function clearStyle() {
-    form.styleInput = null;
-    form.styleError = null;
-    form.tokenError = null;
-    form.attribution = [];
-  }
 
   async function resolveStyle() {
     const seq = ++resolveSeq;
