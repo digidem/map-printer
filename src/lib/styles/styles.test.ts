@@ -322,6 +322,20 @@ describe("fetchAttribution", () => {
     expect(f.calls).toEqual([]);
   });
 
+  it("leaves out-of-range numeric entities as written", async () => {
+    const input: StyleInput = {
+      kind: "tilejson",
+      url: "https://example.com/r.json",
+      tileKind: "raster",
+      tilejson: { attribution: "Bad &#1114112; and &#xFFFFFFFF; entity" },
+    };
+    const f = fakeFetch({});
+    const style = buildStyle(input) as StyleSpecification;
+    expect(await fetchAttribution(style, input, f.fetch)).toEqual([
+      "Bad &#1114112; and &#xFFFFFFFF; entity",
+    ]);
+  });
+
   it("normalises mapbox:// source urls with the token", async () => {
     const input = (await resolveInput(
       "mapbox://styles/acme/s1",

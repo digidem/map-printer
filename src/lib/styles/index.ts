@@ -241,7 +241,9 @@ function toPlainText(html: string): string {
             ? `0x${entity.slice(2)}`
             : entity.slice(1),
         );
-        return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+        return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+          ? String.fromCodePoint(code)
+          : match;
       }
       return ENTITIES[entity.toLowerCase()] ?? match;
     })
