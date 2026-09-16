@@ -89,7 +89,9 @@ export async function createMapRenderer(
     attributionControl: false,
   });
 
-  let failure: Error | undefined;
+  let styleFailure: Error | undefined;
+  let sourceFailure: Error | undefined;
+  let styleLoaded = false;
   let rejectPending: ((error: Error) => void) | undefined;
 
   function destroy() {
@@ -98,15 +100,25 @@ export async function createMapRenderer(
     container.remove();
   }
 
-  map.on("error", (event) => {
-    if (failure) return;
-    failure = describeError(event);
-    rejectPending?.(failure);
+  map.on("error", (event: ErrorEvent & { sourceId?: string }) => {
+    if (event.sourceId !== undefined) {
+      const error = describeError(event);
+      if (rejectPending) rejectPending(error);
+      else sourceFailure ??= error;
+      return;
+    }
+    // Sprite, image and layer-validation errors are all fired after
+    // `style.load`, and leave a map that still renders; a style that fails to
+    // load or parse never gets there.
+    if (styleLoaded) return;
+    styleFailure ??= describeError(event);
+    rejectPending?.(styleFailure);
   });
 
   // A style loaded by URL cannot be rewritten before construction, so the
   // background layer is inserted once MapLibre has parsed it.
   map.on("style.load", () => {
+    styleLoaded = true;
     const layers = map.getStyle().layers;
     if (layers.some((layer) => layer.type === "background")) return;
     map.addLayer(OPAQUE_BACKGROUND_LAYER, layers[0]?.id);
@@ -147,7 +159,12 @@ export async function createMapRenderer(
       if (rendering) {
         throw new Error("render() called while a render is in progress");
       }
-      if (failure) throw failure;
+      if (styleFailure) throw styleFailure;
+      if (sourceFailure) {
+        const error = sourceFailure;
+        sourceFailure = undefined;
+        throw error;
+      }
       if (tile.width > tileSize.width || tile.height > tileSize.height) {
         throw new RangeError(
           `Tile ${tile.width}×${tile.height} exceeds the renderer's tile size`,

@@ -147,6 +147,12 @@ describe("chromium", () => {
       viewport: TILE_SIZE,
       style: "/fixtures/style-geojson-nobg.json",
     },
+    // A sprite that 404s is an error event MapLibre recovers from.
+    {
+      pixelRatio: 1,
+      viewport: TILE_SIZE,
+      style: "/fixtures/style-geojson-badsprite.json",
+    },
   ])(
     "renders the square at pixel ratio $pixelRatio in a $viewport.width×$viewport.height tile from $style",
     async ({ pixelRatio, viewport, style }) => {

@@ -70,12 +70,20 @@ render frame as soon as nothing is dirty. Renders are sequential: calling
 ### Errors
 
 MapLibre still fires `idle` when tiles or sources have failed, so the renderer
-listens to the map's `error` event for the renderer's whole life. The first
-error fails the in-flight render and every later one, with the source id in
-the message for tile and source errors. Missing sprite images are console
-warnings in MapLibre, not error events, so they do not fail a render; a style
-that fails to load, a TileJSON or tile request that fails (other than a 404,
-which MapLibre treats as an empty tile) or an invalid style does.
+listens to the map's `error` event for its whole life and classifies what it
+gets, because plenty of MapLibre errors leave a map that renders correctly:
+
+- an error carrying a `sourceId` — a TileJSON or tile request that failed with
+  anything but a 404, which MapLibre treats as an empty tile — fails the render
+  waiting on it, or the next `render` when none is in flight. It is not
+  latched: one bad tile does not fail the rest of the export.
+- any other error before `style.load` is the style failing to load, parse or
+  validate. The map will never render, so it rejects `createMapRenderer` and
+  every later `render`.
+- any other error after `style.load` is ignored. A sprite request that fails,
+  `Source layer "x" does not exist on source "y"` and `An image named "x"
+  already exists` are all ordinary `error` events and none of them stop the
+  map rendering.
 
 A render that does not reach `idle` within `renderTimeoutMs` rejects with a
 timeout error that names the tile. `document.visibilityState === "hidden"`

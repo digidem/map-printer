@@ -171,6 +171,10 @@ One hidden `maplibregl.Map`, created once and reused for every tile:
   tile or the style; then `gl.readPixels` into a reusable scratch buffer,
   flip rows (WebGL is bottom-up), drop alpha when `channels === 3`, crop to
   the tile rect, and return a fresh `Uint8Array`.
+- an `error` event carrying a `sourceId` fails the render waiting on it and is
+  not latched; any other error is fatal before `style.load` (the style itself
+  failed) and ignored after it (sprite, image and layer-validation errors leave
+  a map that renders).
 - the framebuffer is premultiplied; the style is passed through
   `ensureOpaqueBackground` so every pixel is opaque and no un-premultiply is
   needed. RGB output is the default for print.
