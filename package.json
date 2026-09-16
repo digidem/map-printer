@@ -1,31 +1,32 @@
 {
   "name": "map-printer",
-  "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Export print-resolution PNGs of a map in the browser.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "budo index.js:bundle.js --live",
-    "build": "mkdirp build && copyfiles index.html sw.js build && browserify index.js -g yo-yoify -o build/bundle.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "lit": "^3.3.3",
+    "maplibre-gl": "^6.9.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.5.1",
+    "fast-png": "^8.0.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   },
   "author": "Digital Democracy",
   "license": "MIT",
-  "dependencies": {
-    "@turf/bbox-polygon": "^6.4.0",
-    "@turf/helpers": "^6.4.0",
-    "browser-cache-blob-store": "^1.1.1",
-    "mapbox-gl": "^1.13.1",
-    "mapbox-map-image-stream": "^2.1.1",
-    "pump": "^3.0.0",
-    "viewport-mercator-project": "^6.1.1",
-    "yo-yo": "^1.4.1"
-  },
-  "devDependencies": {
-    "browserify": "^16.3.0",
-    "budo": "^11.6.4",
-    "copyfiles": "^2.4.1",
-    "mkdirp": "^0.5.1",
-    "yo-yoify": "^4.3.0"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/digidem/map-printer.git"
@@ -33,6 +34,5 @@
   "bugs": {
     "url": "https://github.com/digidem/map-printer/issues"
   },
-  "homepage": "https://github.com/digidem/map-printer#readme",
-  "description": ""
+  "homepage": "https://github.com/digidem/map-printer#readme"
 }
