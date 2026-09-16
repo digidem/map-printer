@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --project unit",
+    "test:e2e": "E2E=1 vite build && vitest run --project e2e",
+    "test:e2e:install": "npx playwright install chromium firefox webkit"
   },
   "dependencies": {
     "lit": "^3.3.3",
@@ -19,6 +21,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.5.1",
     "fast-png": "^8.0.0",
+    "playwright": "^1.63.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
