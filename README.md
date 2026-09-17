@@ -19,5 +19,13 @@ npm run build   # production build to dist/
 npm test        # unit tests
 ```
 
+## Deployment
+
+```bash
+npm run deploy   # build + deploy to Cloudflare Workers (static assets)
+```
+
+Deploys to a `workers.dev` subdomain; a custom domain will be configured later.
+
 ## License
 MIT
