@@ -69,10 +69,12 @@ provider's key is ever sent to Mapbox. Throws inside the transform if a
 
 ### `ensureOpaqueBackground`
 
-Prepends `{ id: "map-printer-background", type: "background", paint:
-{ "background-color": "#ffffff" } }` when the style has no background layer,
-and returns the style unchanged (same object) when it has one — the renderer
-reads a premultiplied framebuffer, so every exported pixel must be opaque.
+Prepends `OPAQUE_BACKGROUND_LAYER` (`{ id: "map-printer-background", type:
+"background", paint: { "background-color": "#ffffff" } }`, also exported) when
+the style has no background layer, and returns the style unchanged (same
+object) when it has one — the renderer reads a premultiplied framebuffer, so
+every exported pixel must be opaque. The renderer inserts the same layer into
+styles it loads by URL, which `buildStyle` cannot rewrite.
 
 ### `fetchAttribution`
 

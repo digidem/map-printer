@@ -1,0 +1,36 @@
+{
+  "version": 8,
+  "name": "e2e red square, no background",
+  "sources": {
+    "square": {
+      "type": "geojson",
+      "data": {
+        "type": "Feature",
+        "properties": {},
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-1, -1],
+              [1, -1],
+              [1, 1],
+              [-1, 1],
+              [-1, -1]
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "square",
+      "type": "fill",
+      "source": "square",
+      "paint": {
+        "fill-color": "#ff0000",
+        "fill-antialias": false
+      }
+    }
+  ]
+}

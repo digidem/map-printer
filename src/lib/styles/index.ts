@@ -112,18 +112,21 @@ export function transformRequestFor(
     isMapboxUrl(url) ? { url: normalizeMapboxUrl(url, token) } : { url };
 }
 
+/** The layer `ensureOpaqueBackground` prepends; the renderer inserts the
+ *  same one into styles it loads by URL. */
+export const OPAQUE_BACKGROUND_LAYER: LayerSpecification = {
+  id: "map-printer-background",
+  type: "background",
+  paint: { "background-color": "#ffffff" },
+};
+
 /** Every pixel of a print export must be opaque, so a style without a
  *  background layer gets a white one. */
 export function ensureOpaqueBackground(
   style: StyleSpecification,
 ): StyleSpecification {
   if (style.layers.some((layer) => layer.type === "background")) return style;
-  const background: LayerSpecification = {
-    id: "map-printer-background",
-    type: "background",
-    paint: { "background-color": "#ffffff" },
-  };
-  return { ...style, layers: [background, ...style.layers] };
+  return { ...style, layers: [OPAQUE_BACKGROUND_LAYER, ...style.layers] };
 }
 
 /** Attribution the user has to reproduce on the print: the inline `attribution`
