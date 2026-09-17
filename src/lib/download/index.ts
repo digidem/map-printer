@@ -24,9 +24,14 @@ export interface DownloadOptions {
 
 export interface Download {
   writable: WritableStream<Uint8Array>;
-  /** Removes the iframe that started the download. */
+  /** Removes the iframe that started the download. Call it only after a
+   *  failure: iOS Safari finalises a download when its initiating frame goes
+   *  away, even while bytes it has already accepted are still being flushed
+   *  to disk, so after success the iframe stays until the next download. */
   cleanup(): void;
 }
+
+let activeIframe: HTMLIFrameElement | undefined;
 
 export function registerDownloadWorker(): void {
   if (!("serviceWorker" in navigator)) return;
@@ -143,11 +148,16 @@ async function prepareSwDownload(
   // Navigate first and synchronously, before any await: Safari only starts a
   // download while the click's user activation is live. The service worker
   // holds the request open until the stream below reaches it.
+  activeIframe?.remove();
   const iframe = document.createElement("iframe");
   iframe.hidden = true;
   iframe.src = url;
   document.body.appendChild(iframe);
-  const cleanup = () => iframe.remove();
+  activeIframe = iframe;
+  const cleanup = () => {
+    iframe.remove();
+    if (activeIframe === iframe) activeIframe = undefined;
+  };
 
   // Nothing is generated until the request is known to have arrived.
   if (!(await waitForDownloadStart(url, DOWNLOAD_START_TIMEOUT_MS))) {

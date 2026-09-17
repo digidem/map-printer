@@ -25,6 +25,12 @@ activation from the click is still live. The worker cannot see a navigation
 that never reached it, so the page waits for its `downloadStarted` message
 before handing over the `MessagePort` and returning the writable.
 
+The iframe outlives the writable. The worker's `PULL`s only mean the
+browser's network layer has read the bytes, not that they are on disk, and
+iOS Safari finalises a download the moment its initiating frame is removed,
+saving only what had been flushed. So `cleanup()` is for failures; after
+success the iframe stays until the next `startDownload` replaces it.
+
 ## Backpressure and errors
 
 The sink posts one `WRITE` per chunk and waits for the worker's `PULL` before

@@ -51,5 +51,7 @@ last band is rendered rather than as the last byte is written.
 
 Aborting `signal` stops the mosaic and aborts the download, so the browser
 reports a failed download instead of leaving a truncated PNG. Any other
-failure does the same. The renderer is destroyed and the download's iframe
-removed in `finally`, whatever happened.
+failure does the same, and removes the download's iframe. After success the
+iframe is left in place: iOS Safari finalises a download when its initiating
+frame is removed, even while accepted bytes are still being flushed to disk.
+The renderer is destroyed in `finally`, whatever happened.
