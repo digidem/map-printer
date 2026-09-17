@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run --project unit",
     "test:e2e": "E2E=1 vite build && vitest run --project e2e",
-    "test:e2e:install": "npx playwright install chromium firefox webkit"
+    "test:e2e:install": "npx playwright install chromium firefox webkit",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "lit": "^3.3.3",
@@ -26,7 +27,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.2"
   },
   "author": "Digital Democracy",
   "license": "MIT",

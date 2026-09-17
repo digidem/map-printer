@@ -1,0 +1,10 @@
+# Don't let the browser HTTP-cache the service worker. Without this the
+# browser falls back to its 24-hour update rule and a freshly-deployed sw.js
+# can take a day to propagate to existing users.
+/sw.js
+  Cache-Control: no-cache
+# index.html should always re-validate so the asset hash references stay current.
+/index.html
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache

@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "map-printer",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": true,
+  // Defaults to workers_dev; PR previews need it on explicitly.
+  "preview_urls": true,
+  "assets": {
+    "directory": "./dist",
+  },
+}
