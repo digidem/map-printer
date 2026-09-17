@@ -50,7 +50,7 @@ class MessagePortSource {
 // path existed ignores them — the page checks DOWNLOAD_PROTOCOL to notice.
 const DOWNLOAD_PATH = "/_download/";
 const DOWNLOAD_TIMEOUT = 30_000;
-const DOWNLOAD_PROTOCOL = 1;
+const DOWNLOAD_PROTOCOL = 2;
 
 /** Streams whose fetch has not arrived yet, keyed by URL */
 const pending = new Map();
@@ -68,7 +68,7 @@ self.addEventListener("message", (evt) => {
     new MessagePortSource(data.readablePort),
     new CountQueuingStrategy({ highWaterMark: 4 }),
   );
-  const download = { rs, headers: data.headers };
+  const download = { rs: announceWhenRead(rs, data.url), headers: data.headers };
   const waiter = waiting.get(data.url);
   if (waiter) {
     waiting.delete(data.url);
@@ -80,11 +80,38 @@ self.addEventListener("message", (evt) => {
 
 // A navigation does not always reach the service worker, and the page can only
 // tell by being told the request arrived.
-async function announceDownload(url) {
+function announceDownload(url) {
+  return announce({ type: "downloadStarted", url });
+}
+
+async function announce(message) {
   const clients = await self.clients.matchAll({ includeUncontrolled: true });
-  for (const client of clients) {
-    client.postMessage({ type: "downloadStarted", url });
-  }
+  for (const client of clients) client.postMessage(message);
+}
+
+// The page's writes complete when this worker has queued them, long before
+// the browser has read them out of the response, so the browser's read of the
+// last chunk is announced separately. pull() only runs once the browser has
+// taken the previous chunk, so `done` here means it has read everything.
+function announceWhenRead(rs, url) {
+  const reader = rs.getReader();
+  return new ReadableStream(
+    {
+      async pull(controller) {
+        const { value, done } = await reader.read();
+        if (done) {
+          controller.close();
+          await announce({ type: "downloadComplete", url });
+        } else {
+          controller.enqueue(value);
+        }
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    },
+    new CountQueuingStrategy({ highWaterMark: 1 }),
+  );
 }
 
 self.addEventListener("fetch", (event) => {

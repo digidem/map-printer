@@ -9,7 +9,7 @@ const CLOSE = 2;
 
 // Kept in step with public/sw.js: an older worker ignores /_download/ requests.
 const DOWNLOAD_PATH = "/_download/";
-const DOWNLOAD_PROTOCOL = 1;
+const DOWNLOAD_PROTOCOL = 2;
 const DOWNLOAD_START_TIMEOUT_MS = 5_000;
 
 const NO_WORKER_MESSAGE =
@@ -24,6 +24,10 @@ export interface DownloadOptions {
 
 export interface Download {
   writable: WritableStream<Uint8Array>;
+  /** Resolves once the browser has read the last byte out of the worker's
+   *  response, which is later than the writable closing: writes complete when
+   *  the worker has queued them. Never rejects. */
+  complete: Promise<void>;
   /** Removes the iframe that started the download. Call it only after a
    *  failure: iOS Safari finalises a download when its initiating frame goes
    *  away, even while bytes it has already accepted are still being flushed
@@ -71,14 +75,36 @@ export function downloadReady(): Promise<void> {
 export async function startDownload(opts: DownloadOptions): Promise<Download> {
   // Nothing may be awaited before this call: it navigates an iframe, which
   // Safari only turns into a download while the user activation is still live.
-  const { workerPort, cleanup } = await prepareSwDownload(
+  const { workerPort, complete, cleanup } = await prepareSwDownload(
     opts.filename,
     opts.contentType,
   );
   return {
     writable: new WritableStream(new MessagePortSink(workerPort)),
+    complete,
     cleanup,
   };
+}
+
+/** Resolves when the worker announces that the browser has read the whole
+ *  response for `url`; `stop` gives up listening (the promise then never
+ *  settles, which is fine for a download that failed). */
+function waitForDownloadComplete(url: string): {
+  complete: Promise<void>;
+  stop: () => void;
+} {
+  let stop = () => {};
+  const complete = new Promise<void>((resolve) => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "downloadComplete" && event.data.url === url) {
+        stop();
+        resolve();
+      }
+    };
+    stop = () => navigator.serviceWorker.removeEventListener("message", onMessage);
+    navigator.serviceWorker.addEventListener("message", onMessage);
+  });
+  return { complete, stop };
 }
 
 /** Ask the active service worker which download protocol it speaks (0 = none) */
@@ -126,6 +152,7 @@ function waitForDownloadStart(url: string, timeout: number): Promise<boolean> {
 
 interface SwDownloadChannel {
   workerPort: MessagePort;
+  complete: Promise<void>;
   cleanup: () => void;
 }
 
@@ -154,7 +181,9 @@ async function prepareSwDownload(
   iframe.src = url;
   document.body.appendChild(iframe);
   activeIframe = iframe;
+  const { complete, stop } = waitForDownloadComplete(url);
   const cleanup = () => {
+    stop();
     iframe.remove();
     if (activeIframe === iframe) activeIframe = undefined;
   };
@@ -185,7 +214,7 @@ async function prepareSwDownload(
   const channel = new MessageChannel();
   sw.postMessage({ url, headers, readablePort: channel.port1 }, [channel.port1]);
 
-  return { workerPort: channel.port2, cleanup };
+  return { workerPort: channel.port2, complete, cleanup };
 }
 
 class MessagePortSink implements UnderlyingSink<Uint8Array> {

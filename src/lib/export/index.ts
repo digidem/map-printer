@@ -46,6 +46,12 @@ const CHANNELS = 3;
  *  tile the renderer just returned and its RGBA readPixels scratch. */
 const MEMORY_BUDGET_BYTES = 64 * 1024 * 1024;
 
+const COMPLETE_TIMEOUT_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type ExportTile = {
   col: number;
   row: number;
@@ -87,7 +93,7 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
     css,
   }));
 
-  const { writable, cleanup } = await startDownload({
+  const { writable, complete, cleanup } = await startDownload({
     filename: opts.filename,
     contentType: "image/png",
   });
@@ -121,6 +127,8 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
         }),
       )
       .pipeTo(writable, { signal });
+    // A worker from before protocol 2 never announces, so do not wait forever.
+    await Promise.race([complete, sleep(COMPLETE_TIMEOUT_MS)]);
   } catch (err) {
     // The response only errors if the worker is told; a failure before or
     // outside `pipeTo` would otherwise leave a truncated file on disk.

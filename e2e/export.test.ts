@@ -321,4 +321,24 @@ describeEngines((engine) => {
       if (download) expect(await download.failure()).not.toBeNull();
     },
   );
+
+  test("startDownload's complete resolves once the browser has read the file", async () => {
+    const [download, waitedMs] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      page.evaluate(async () => {
+        const { writable, complete } = await window.mapPrinter.startDownload({
+          filename: "complete.bin",
+          contentType: "application/octet-stream",
+        });
+        const writer = writable.getWriter();
+        for (let i = 0; i < 16; i++) await writer.write(new Uint8Array(65536));
+        await writer.close();
+        const t0 = performance.now();
+        await complete;
+        return performance.now() - t0;
+      }),
+    ]);
+    expect(waitedMs).toBeLessThan(10_000);
+    expect(await download.failure()).toBeNull();
+  });
 });
