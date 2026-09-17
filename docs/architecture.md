@@ -204,7 +204,10 @@ left waiting for a `controllerchange` that is never coming.
 returns a `WritableStream` backed by the MessagePort sink (one `PULL` credit
 per `WRITE`, so the service worker's 4-chunk queue is the backpressure
 boundary). Aborting the writable errors the response so the browser shows a
-failed download instead of a truncated file.
+failed download instead of a truncated file. The iframe is only removed on
+failure, or when the next download starts: iOS Safari finalises a download
+when its initiating frame goes away, even while accepted bytes are still
+being flushed to disk.
 
 ### `export` (browser only, covered by e2e)
 

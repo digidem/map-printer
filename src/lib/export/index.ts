@@ -125,10 +125,10 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
     // The response only errors if the worker is told; a failure before or
     // outside `pipeTo` would otherwise leave a truncated file on disk.
     await writable.abort(err).catch(() => {});
+    cleanup();
     throw err;
   } finally {
     renderer?.destroy();
-    cleanup();
   }
 
   return { bbox: viewportBbox(viewport), zoom: viewport.zoom };
