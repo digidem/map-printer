@@ -193,7 +193,8 @@ Port of map-downloader's service-worker streaming download
 ```ts
 registerDownloadWorker(): void               // at startup; also startMessages()
 downloadReady(): Promise<void>               // resolves once a worker controls the page
-startDownload(opts: { filename: string; contentType: string }): Promise<{ writable: WritableStream<Uint8Array>; cleanup(): void }>
+startDownload(opts: { filename: string; contentType: string }): Promise<{ writable: WritableStream<Uint8Array>; complete: Promise<void>; cleanup(): void }>
+  // complete: the worker has seen the browser read the last chunk (protocol 2)
 ```
 
 `downloadReady()` rejects if registering the worker failed, so the UI is not

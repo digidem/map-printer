@@ -17,9 +17,11 @@ exportMap(opts: {
 }): Promise<{ bbox: Bbox; zoom: number }>
 ```
 
-Resolves once the last byte has been written to the download, with the bbox
-the exported image actually covers (grown from `bbox` on the non-limiting
-axis) and the zoom it was rendered at.
+Resolves once the browser has read the last byte of the download out of the
+service worker (or after 60 s if a pre-protocol-2 worker never says so), with
+the bbox the exported image actually covers (grown from `bbox` on the
+non-limiting axis) and the zoom it was rendered at. On iOS the file may still
+be flushing to disk for a moment after that.
 
 ## Sizes
 

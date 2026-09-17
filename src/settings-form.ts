@@ -371,6 +371,11 @@ export class SettingsForm extends LightElement {
                 style="width: ${Math.round(this.progress * 100)}%"
               ></div>
             </div>
+            ${this.progress >= 1
+              ? html`<p class="mt-1 text-sm text-gray-600" data-status="writing">
+                  Writing file…
+                </p>`
+              : nothing}
             <button
               id="cancel"
               type="button"

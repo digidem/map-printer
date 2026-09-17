@@ -9,7 +9,7 @@ verbatim, and this module is the page side of the same handshake.
 registerDownloadWorker(): void
 downloadReady(): Promise<void>
 startDownload(opts: { filename: string; contentType: string }):
-  Promise<{ writable: WritableStream<Uint8Array>; cleanup(): void }>
+  Promise<{ writable: WritableStream<Uint8Array>; complete: Promise<void>; cleanup(): void }>
 ```
 
 ## How it works
@@ -25,11 +25,17 @@ activation from the click is still live. The worker cannot see a navigation
 that never reached it, so the page waits for its `downloadStarted` message
 before handing over the `MessagePort` and returning the writable.
 
-The iframe outlives the writable. The worker's `PULL`s only mean the
-browser's network layer has read the bytes, not that they are on disk, and
-iOS Safari finalises a download the moment its initiating frame is removed,
-saving only what had been flushed. So `cleanup()` is for failures; after
-success the iframe stays until the next `startDownload` replaces it.
+The iframe outlives the writable. The worker's `PULL`s only mean the worker
+has queued the bytes, not that they are on disk, and iOS Safari finalises a
+download the moment its initiating frame is removed, saving only what had
+been flushed. So `cleanup()` is for failures; after success the iframe stays
+until the next `startDownload` replaces it.
+
+`complete` (protocol 2) resolves when the worker announces
+`downloadComplete`, which it does once the browser has read the last chunk
+out of the response. That is later than the writable closing, though still
+short of the bytes being on disk. It never rejects, so callers race it with
+a timeout in case an older worker is still active.
 
 ## Backpressure and errors
 
