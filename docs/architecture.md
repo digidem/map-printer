@@ -270,7 +270,11 @@ worker or WebGL2) get a message instead of a form. Safari 16.4+, Chrome
 
 ## Deployment
 
-`wrangler.jsonc` serves `dist/` as static assets on `workers.dev` (no worker
-script). `public/_headers` sets `Cache-Control: no-cache` on `sw.js`,
-`index.html` and `/` so a new service worker propagates immediately.
-`npm run deploy` builds and deploys.
+The site is served at https://map-printer.comapeo.app as Cloudflare Worker
+static assets: `wrangler.jsonc` serves `dist/` on that custom domain, with no
+worker script. Pushes to `main` deploy automatically through Cloudflare's
+Workers Builds, and pull requests get a preview URL; that connection is
+configured in the Cloudflare dashboard rather than in this repo.
+`public/_headers` sets `Cache-Control: no-cache` on `sw.js`, `index.html` and
+`/` so a new service worker propagates immediately. `npm run deploy` still
+builds and deploys manually with wrangler.
