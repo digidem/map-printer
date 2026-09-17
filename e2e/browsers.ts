@@ -73,7 +73,13 @@ export function usePage(engine: Engine): EnginePage {
       headless: true,
       ...engine.launchOptions,
     });
-    holder.page = await browser.newPage({ acceptDownloads: true });
+    // Tall enough that the whole settings form fits without scrolling: at the
+    // default 720 px WebKit failed to tick the attribution checkbox once it
+    // had to be scrolled into view inside the form's pane.
+    holder.page = await browser.newPage({
+      acceptDownloads: true,
+      viewport: { width: 1280, height: 1000 },
+    });
     holder.page.on("pageerror", (error) =>
       console.error(`[${engine.name}]`, error),
     );

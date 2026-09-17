@@ -10,7 +10,12 @@ import {
 } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 import { LightElement } from "./lit-base.ts";
-import type { Bbox } from "./lib/viewport/index.ts";
+import {
+  fitBounds,
+  normalizeBearing,
+  viewportCorners,
+  type Bbox,
+} from "./lib/viewport/index.ts";
 
 export interface StyleErrorDetail {
   field: "style" | "token";
@@ -24,6 +29,7 @@ const EMPTY_STYLE: StyleSpecification = {
 };
 
 const BBOX_SOURCE = "map-printer-bbox";
+const PAGE_SOURCE = "map-printer-page";
 
 const BBOX_LAYER: LayerSpecification = {
   id: BBOX_SOURCE,
@@ -38,13 +44,33 @@ const BBOX_LAYER: LayerSpecification = {
   },
 };
 
+/** The page as it will print: the bbox grown to the paper's aspect ratio and
+ *  turned by the bearing. */
+const PAGE_LAYER: LayerSpecification = {
+  id: PAGE_SOURCE,
+  type: "line",
+  source: PAGE_SOURCE,
+  layout: { "line-join": "miter" },
+  paint: {
+    "line-color": "rgb(0, 90, 255)",
+    "line-opacity": 0.8,
+    "line-width": 1.5,
+  },
+};
+
+/** Half the two-decimal step the form stores, so a map bearing that rounds
+ *  to the stored value is neither reported nor snapped. */
+const BEARING_EPSILON = 0.005;
+
 /** Right-hand pane: an interactive map at the paper's aspect ratio, with the
- *  export bbox drawn on it. */
+ *  export bbox and page outline drawn on it. Rotating the map (right-drag or
+ *  the compass) fires `bearing-change`. */
 export class PreviewMap extends LightElement {
   static properties = {
     mapStyle: { attribute: false },
     transformRequest: { attribute: false },
     bbox: { attribute: false },
+    bearing: { type: Number },
     showBbox: { type: Boolean },
     aspect: { type: Number },
     usesToken: { type: Boolean },
@@ -53,6 +79,7 @@ export class PreviewMap extends LightElement {
   declare mapStyle: string | StyleSpecification | null;
   declare transformRequest: RequestTransformFunction | undefined;
   declare bbox: Bbox;
+  declare bearing: number;
   declare showBbox: boolean;
   declare aspect: number;
   /** Whether the current style is a Mapbox one, so a rejected request is the
@@ -72,6 +99,7 @@ export class PreviewMap extends LightElement {
     this.mapStyle = null;
     this.transformRequest = undefined;
     this.bbox = [-180, -85, 180, 85];
+    this.bearing = 0;
     this.showBbox = true;
     this.aspect = 297 / 210;
     this.usesToken = false;
@@ -108,15 +136,18 @@ export class PreviewMap extends LightElement {
       container: this.container,
       style: EMPTY_STYLE,
       transformRequest: this.transformRequest,
-      dragRotate: false,
+      bearing: this.bearing,
       pitchWithRotate: false,
+      touchPitch: false,
+      maxPitch: 0,
     });
     this.map.addControl(
-      new NavigationControl({ showCompass: false }),
+      new NavigationControl({ showCompass: true, visualizePitch: false }),
       "top-left",
     );
     this.map.on("style.load", () => this.onStyleLoad());
     this.map.on("error", (event) => this.onMapError(event));
+    this.map.on("rotateend", () => this.onRotateEnd());
     this.zoomToBbox(0);
     this.applyStyle();
     this.resizeObserver = new ResizeObserver(() => this.fitContainer());
@@ -129,7 +160,15 @@ export class PreviewMap extends LightElement {
       this.map?.setTransformRequest(this.transformRequest ?? null);
     }
     if (changed.has("mapStyle")) this.applyStyle();
-    if (changed.has("bbox") || changed.has("showBbox")) this.drawBbox();
+    if (changed.has("bearing")) this.applyBearing();
+    if (
+      changed.has("bbox") ||
+      changed.has("bearing") ||
+      changed.has("aspect") ||
+      changed.has("showBbox")
+    ) {
+      this.drawBbox();
+    }
   }
 
   zoomToBbox(duration?: number) {
@@ -138,7 +177,24 @@ export class PreviewMap extends LightElement {
         [this.bbox[0], this.bbox[1]],
         [this.bbox[2], this.bbox[3]],
       ],
-      duration === undefined ? {} : { duration },
+      { bearing: this.bearing, ...(duration === undefined ? {} : { duration }) },
+    );
+  }
+
+  private applyBearing() {
+    if (!this.map) return;
+    if (Math.abs(this.map.getBearing() - this.bearing) < BEARING_EPSILON) {
+      return;
+    }
+    this.map.setBearing(this.bearing);
+  }
+
+  private onRotateEnd() {
+    if (!this.map) return;
+    const bearing = normalizeBearing(this.map.getBearing());
+    if (Math.abs(bearing - this.bearing) < BEARING_EPSILON) return;
+    this.dispatchEvent(
+      new CustomEvent<number>("bearing-change", { detail: bearing }),
     );
   }
 
@@ -170,6 +226,11 @@ export class PreviewMap extends LightElement {
         data: emptyFeatures(),
       });
       this.map.addLayer(BBOX_LAYER);
+      this.map.addSource(PAGE_SOURCE, {
+        type: "geojson",
+        data: emptyFeatures(),
+      });
+      this.map.addLayer(PAGE_LAYER);
     }
     this.drawBbox();
     this.dispatchEvent(
@@ -180,10 +241,23 @@ export class PreviewMap extends LightElement {
   }
 
   private drawBbox() {
-    const source = this.map?.getSource(BBOX_SOURCE) as
+    const bboxSource = this.map?.getSource(BBOX_SOURCE) as
       | GeoJSONSource
       | undefined;
-    source?.setData(this.showBbox ? bboxFeatures(this.bbox) : emptyFeatures());
+    const pageSource = this.map?.getSource(PAGE_SOURCE) as
+      | GeoJSONSource
+      | undefined;
+    if (!bboxSource || !pageSource) return;
+    if (!this.showBbox) {
+      bboxSource.setData(emptyFeatures());
+      pageSource.setData(emptyFeatures());
+      return;
+    }
+    bboxSource.setData(polygonFeatures(bboxRing(this.bbox)));
+    // The page's geographic outline depends only on the paper's aspect ratio,
+    // not its pixel size.
+    const page = fitBounds(this.bbox, this.aspect, 1, this.bearing);
+    pageSource.setData(polygonFeatures(viewportCorners(page)));
   }
 
   /** Marks the field that is wrong instead of tearing the map down, with
@@ -218,7 +292,16 @@ function emptyFeatures(): FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-function bboxFeatures([west, south, east, north]: Bbox): FeatureCollection {
+function bboxRing([west, south, east, north]: Bbox): [number, number][] {
+  return [
+    [west, south],
+    [east, south],
+    [east, north],
+    [west, north],
+  ];
+}
+
+function polygonFeatures(ring: readonly [number, number][]): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: [
@@ -227,15 +310,7 @@ function bboxFeatures([west, south, east, north]: Bbox): FeatureCollection {
         properties: {},
         geometry: {
           type: "Polygon",
-          coordinates: [
-            [
-              [west, south],
-              [east, south],
-              [east, north],
-              [west, north],
-              [west, south],
-            ],
-          ],
+          coordinates: [[...ring, ring[0]!]],
         },
       },
     ],

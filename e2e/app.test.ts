@@ -143,10 +143,72 @@ describeEngines((engine) => {
     await page.waitForSelector('[data-message="success"]');
   });
 
-  test("exports a raster tile template in the fixture palette", async () => {
+  test("an invalid rotation is reported inline", async () => {
+    await page.fill("#bearing", "");
+    await page.waitForSelector('[data-error="bearing"]');
+    expect(await page.isDisabled("#export")).toBe(true);
+
+    await page.fill("#bearing", "0");
+    await page.waitForSelector('[data-error="bearing"]', { state: "detached" });
+    await page.waitForSelector("#export:not([disabled])");
+  });
+
+  test("the compass resets the rotation field", async () => {
+    await page.fill("#bearing", "90");
+    await page.waitForSelector('[data-zoom-line]:has-text("rotated 90°")');
+
+    await page.click(".maplibregl-ctrl-compass");
+    await page.waitForFunction(
+      () => (document.querySelector("#bearing") as HTMLInputElement).value === "0",
+    );
+    await page.waitForSelector('[data-zoom-line]:not(:has-text("rotated"))');
+  });
+
+  test("exports the bbox turned by the rotation field", async () => {
+    await page.fill("#bearing", "30");
+    await page.waitForSelector('[data-zoom-line]:has-text("rotated 30°")');
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      page.click("#export"),
+    ]);
+    const file = path.join(browser.downloadDir, download.suggestedFilename());
+    await download.saveAs(file);
+    const png = decode(fs.readFileSync(file));
+
+    expect(png.width).toBe(mmToPx(WIDTH_MM, DPI, 1));
+    expect(png.height).toBe(mmToPx(HEIGHT_MM, DPI, 1));
+    // The 6° bbox height fills the page, so the 2° square's half-side is a
+    // sixth of it. The square turns 30° about the page centre.
+    const cx = png.width / 2;
+    const cy = png.height / 2;
+    const half = png.height / 6;
+    const cos = Math.cos(Math.PI / 6);
+    const sin = Math.sin(Math.PI / 6);
+    expect(isRed(pixelAt(png, Math.round(cx), Math.round(cy)))).toBe(true);
+    // Just inside the north-up square's corner: outside the turned one.
+    expect(
+      isRed(pixelAt(png, Math.round(cx + 0.9 * half), Math.round(cy - 0.9 * half))),
+    ).toBe(false);
+    // Most of the way to the turned square's south-east corner: inside it,
+    // but beyond the north-up square's east edge.
+    const cornerX = half * cos + half * sin;
+    const cornerY = -half * sin + half * cos;
+    expect(cornerX * 0.85).toBeGreaterThan(half + 3);
+    expect(
+      isRed(
+        pixelAt(png, Math.round(cx + 0.85 * cornerX), Math.round(cy + 0.85 * cornerY)),
+      ),
+    ).toBe(true);
+    await page.waitForSelector('[data-message="success"]');
+    await page.fill("#bearing", "0");
+  });
+
+  /** Exports the raster fixture and checks every flat patch is a tile colour. */
+  async function exportRaster(bearing: string): Promise<void> {
     await page.fill("#bbox", RASTER_BBOX);
     await page.fill("#width", String(RASTER_WIDTH_MM));
     await page.fill("#height", String(RASTER_HEIGHT_MM));
+    await page.fill("#bearing", bearing);
     // Last: the debounced re-resolve would otherwise re-enable Export before
     // waitForStyle sees it go disabled.
     await page.fill("#style", rasterTemplate);
@@ -171,6 +233,18 @@ describeEngines((engine) => {
     }
     expect(sampled).toBeGreaterThan(100);
     expect(seen.size).toBeGreaterThan(1);
+  }
+
+  test("exports a raster tile template in the fixture palette", async () => {
+    await exportRaster("0");
+  });
+
+  test("exports a turned raster tile template in the fixture palette", async () => {
+    // The style is already the raster one, so waitForStyle would hang on a
+    // field that does not change; re-select the vector fixture first.
+    await page.fill("#style", fixtureStyle);
+    await waitForStyle(page);
+    await exportRaster("30");
   });
 
   // Last: Playwright's Firefox stops reporting downloads once one has been

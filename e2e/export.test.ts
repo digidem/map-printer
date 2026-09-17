@@ -7,7 +7,9 @@ import { describeEngines, harnessUrl, usePage } from "./browsers.ts";
 import {
   fitBounds,
   project,
+  rotateOffset,
   type Bbox,
+  type LngLat,
   type Viewport,
 } from "../src/lib/viewport/index.ts";
 
@@ -39,6 +41,14 @@ function projectedRect(bbox: Bbox, v: Viewport, pixelRatio: number): Rect {
   };
 }
 
+/** Where a lng/lat lands in the exported image's pixels, at any bearing. */
+function toScreen(v: Viewport, point: LngLat, pixelRatio: number): [number, number] {
+  const [cx, cy] = project(v.center, v.zoom);
+  const [x, y] = project(point, v.zoom);
+  const [sx, sy] = rotateOffset([x - cx, y - cy], -(v.bearing ?? 0));
+  return [(sx + v.width / 2) * pixelRatio, (sy + v.height / 2) * pixelRatio];
+}
+
 function pixelAt(png: DecodedPng, x: number, y: number): number[] {
   const i = (Math.round(y) * png.width + Math.round(x)) * png.channels;
   return [png.data[i], png.data[i + 1], png.data[i + 2]];
@@ -68,6 +78,7 @@ interface ExportRequest {
   widthPx: number;
   heightPx: number;
   pixelRatio: number;
+  bearing?: number;
   filename: string;
   tileSize?: { width: number; height: number };
 }
@@ -94,6 +105,7 @@ describeEngines((engine) => {
           widthPx: number;
           heightPx: number;
           pixelRatio: number;
+          bearing?: number;
           filename: string;
           tileSize?: { width: number; height: number };
         };
@@ -238,6 +250,105 @@ describeEngines((engine) => {
         WHITE,
         `bottom out ${x}`,
       );
+    }
+  });
+
+  test("exports a rotated 3×3 tile grid without seams", async () => {
+    const widthPx = 900;
+    const heightPx = 700;
+    const pixelRatio = 2;
+    const bearing = 30;
+    const tileSize = { width: 150, height: 120 };
+    const { result, png } = await exportPng({
+      style: fixtureStyle,
+      bbox: TIGHT_BBOX,
+      widthPx,
+      heightPx,
+      pixelRatio,
+      bearing,
+      filename: "rotated.png",
+      tileSize,
+    });
+
+    const v = fitBounds(
+      TIGHT_BBOX,
+      widthPx / pixelRatio,
+      heightPx / pixelRatio,
+      bearing,
+    );
+    expect(png.width).toBe(widthPx);
+    expect(png.height).toBe(heightPx);
+    expect(result.bearing).toBe(bearing);
+    expect(result.zoom).toBeCloseTo(fitBounds(TIGHT_BBOX, 450, 350).zoom, 9);
+    for (const [i, corner] of result.corners.entries()) {
+      const [x, y] = toScreen(v, corner, pixelRatio);
+      const expected = [
+        [0, 0],
+        [widthPx, 0],
+        [widthPx, heightPx],
+        [0, heightPx],
+      ][i];
+      expect(x, `corner ${i} x`).toBeCloseTo(expected[0], 3);
+      expect(y, `corner ${i} y`).toBeCloseTo(expected[1], 3);
+    }
+
+    const corners: [number, number][] = (
+      [
+        [SQUARE[0], SQUARE[3]],
+        [SQUARE[2], SQUARE[3]],
+        [SQUARE[2], SQUARE[1]],
+        [SQUARE[0], SQUARE[1]],
+      ] as LngLat[]
+    ).map((c) => toScreen(v, c, pixelRatio));
+    const centre = toScreen(v, [0, 0], pixelRatio);
+    const margin = 2 * pixelRatio;
+
+    // The square still straddles every seam of the grid; the seams are where
+    // a tile rendered at the wrong centre would show.
+    for (const x of [tileSize.width, tileSize.width * 2].map(
+      (x) => x * pixelRatio,
+    )) {
+      for (const dx of [-1, 0, 1]) {
+        expectColor(pixelAt(png, x + dx, centre[1]), RED, `seam x ${x + dx}`);
+      }
+    }
+    for (const y of [tileSize.height, tileSize.height * 2].map(
+      (y) => y * pixelRatio,
+    )) {
+      for (const dy of [-1, 0, 1]) {
+        expectColor(pixelAt(png, centre[0], y + dy), RED, `seam y ${y + dy}`);
+      }
+    }
+
+    // Walk each edge of the turned square: red a margin inside it, white a
+    // margin outside.
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i];
+      const b = corners[(i + 1) % 4];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      // Inward normal: the edge turned a quarter turn towards the centre.
+      let nx = -(b[1] - a[1]) / length;
+      let ny = (b[0] - a[0]) / length;
+      const midX = (a[0] + b[0]) / 2;
+      const midY = (a[1] + b[1]) / 2;
+      if ((centre[0] - midX) * nx + (centre[1] - midY) * ny < 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+      for (const t of sampleAlong(0, 1, margin / length)) {
+        const px = a[0] + (b[0] - a[0]) * t;
+        const py = a[1] + (b[1] - a[1]) * t;
+        expectColor(
+          pixelAt(png, px + nx * margin, py + ny * margin),
+          RED,
+          `edge ${i} in at ${t.toFixed(2)}`,
+        );
+        expectColor(
+          pixelAt(png, px - nx * margin, py - ny * margin),
+          WHITE,
+          `edge ${i} out at ${t.toFixed(2)}`,
+        );
+      }
     }
   });
 

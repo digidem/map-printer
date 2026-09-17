@@ -10,27 +10,34 @@ exportMap(opts: {
   bbox: Bbox;
   widthPx: number; heightPx: number;   // device px
   pixelRatio: number;                  // positive integer
+  bearing?: number;                    // degrees clockwise from north up, default 0
   filename: string;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
   tileSize?: { width: number; height: number };  // test-only
-}): Promise<{ bbox: Bbox; zoom: number }>
+}): Promise<{ bbox: Bbox; corners: [LngLat, LngLat, LngLat, LngLat]; zoom: number; bearing: number }>
 ```
 
 Resolves once the browser has read the last byte of the download out of the
 service worker (or after 60 s if a pre-protocol-2 worker never says so), with
-the bbox the exported image actually covers (grown from `bbox` on the
-non-limiting axis) and the zoom it was rendered at. On iOS the file may still
-be flushing to disk for a moment after that.
+the corners of the page in screen order from the top-left, their envelope as
+`bbox` (north-up, that is `bbox` grown on the non-limiting axis), and the zoom
+and bearing it was rendered at. On iOS the file may still be flushing to disk
+for a moment after that.
+
+`bearing` turns the page about the centre of `bbox` without changing the zoom
+`bbox` fits at north-up, so at most angles the corners of `bbox` fall off the
+page; the UI draws the page outline on the preview for that reason.
 
 ## Sizes
 
 `widthPx`/`heightPx` are the pixel dimensions of the PNG. The map is laid out
 in CSS px, so both must be whole multiples of `pixelRatio` — which the UI
 guarantees by taking its sizes from `viewport.mmToPx` — and the CSS viewport is
-`px / pixelRatio`. A viewport taller than the Mercator world at its zoom is
-rejected rather than rendered, because MapLibre would quietly shift the camera
-(see `viewport.fitsWorld`).
+`px / pixelRatio`. A page that leaves the Mercator world at its zoom — taller
+than it, or turned so a corner crosses the latitude limit — is rejected rather
+than rendered, because there is nothing to draw there (see
+`viewport.fitsWorld`).
 
 Tiles are as wide as the GPU allows (`map-renderer.maxTileSize`) but never
 wider than the viewport, so most exports are a single column. Their height is

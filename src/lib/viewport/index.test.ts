@@ -8,10 +8,13 @@ import {
   fitsWorld,
   isValidBbox,
   mmToPx,
+  normalizeBearing,
   project,
+  rotateOffset,
   tileGrid,
   unproject,
   viewportBbox,
+  viewportCorners,
 } from "./index.ts";
 
 describe("project / unproject", () => {
@@ -381,5 +384,145 @@ describe("mmToPx", () => {
     expect(() => mmToPx(Number.NaN, 96)).toThrow(TypeError);
     expect(() => mmToPx(210, 192, 0)).toThrow(TypeError);
     expect(() => mmToPx(210, 192, 1.5)).toThrow(TypeError);
+  });
+});
+
+describe("normalizeBearing", () => {
+  it("wraps to (-180, 180]", () => {
+    expect(normalizeBearing(0)).toBe(0);
+    expect(normalizeBearing(90)).toBe(90);
+    expect(normalizeBearing(-90)).toBe(-90);
+    expect(normalizeBearing(180)).toBe(180);
+    expect(normalizeBearing(-180)).toBe(180);
+    expect(normalizeBearing(540)).toBe(180);
+    expect(normalizeBearing(270)).toBe(-90);
+    expect(normalizeBearing(360)).toBe(0);
+    expect(normalizeBearing(-450)).toBe(-90);
+  });
+
+  it("rejects non-finite input", () => {
+    expect(() => normalizeBearing(Number.NaN)).toThrow(TypeError);
+    expect(() => normalizeBearing(Number.POSITIVE_INFINITY)).toThrow(TypeError);
+  });
+});
+
+describe("rotateOffset", () => {
+  it("is the identity at bearing 0", () => {
+    expect(rotateOffset([3, -4], 0)).toEqual([3, -4]);
+  });
+
+  it("turns screen-up into world-east at bearing 90 (east up)", () => {
+    // With east up, a point east of the centre is above it on screen, so a
+    // screen offset pointing up (0, -d) must land east: world (+d, 0).
+    const [x, y] = rotateOffset([0, -10], 90);
+    expect(x).toBeCloseTo(10, 9);
+    expect(y).toBeCloseTo(0, 9);
+    const [x2, y2] = rotateOffset([10, 0], 90);
+    expect(x2).toBeCloseTo(0, 9);
+    expect(y2).toBeCloseTo(10, 9);
+  });
+
+  it("preserves length", () => {
+    for (const bearing of [-170, -45, 12.5, 33, 90, 179]) {
+      const [x, y] = rotateOffset([3, 4], bearing);
+      expect(Math.hypot(x, y)).toBeCloseTo(5, 9);
+    }
+  });
+});
+
+describe("bearing", () => {
+  const bbox: Bbox = [-10, -5, 10, 5];
+
+  it("fitBounds keeps the unrotated zoom and centre and records the bearing", () => {
+    const flat = fitBounds(bbox, 800, 400);
+    const turned = fitBounds(bbox, 800, 400, 30);
+    expect(flat.bearing).toBe(0);
+    expect(turned.bearing).toBe(30);
+    expect(turned.zoom).toBe(flat.zoom);
+    expect(turned.center).toEqual(flat.center);
+    expect(fitBounds(bbox, 800, 400, 450).bearing).toBe(90);
+  });
+
+  it("viewportCorners at bearing 0 are the unrotated bbox corners", () => {
+    const v = fitBounds(bbox, 800, 400);
+    const [nw, ne, se, sw] = viewportCorners(v);
+    const [west, south, east, north] = viewportBbox(v);
+    expect(nw[0]).toBeCloseTo(west, 9);
+    expect(nw[1]).toBeCloseTo(north, 9);
+    expect(ne[0]).toBeCloseTo(east, 9);
+    expect(ne[1]).toBeCloseTo(north, 9);
+    expect(se[0]).toBeCloseTo(east, 9);
+    expect(se[1]).toBeCloseTo(south, 9);
+    expect(sw[0]).toBeCloseTo(west, 9);
+    expect(sw[1]).toBeCloseTo(south, 9);
+  });
+
+  it("viewportCorners at bearing 90 put the top edge on the east", () => {
+    const v = fitBounds(bbox, 800, 400, 90);
+    const [tl, tr, br, bl] = viewportCorners(v);
+    // Screen top is east; screen right is south.
+    expect(tl[0]).toBeCloseTo(tr[0], 9);
+    expect(tl[0]).toBeGreaterThan(v.center[0]);
+    expect(bl[0]).toBeLessThan(v.center[0]);
+    expect(tr[1]).toBeLessThan(tl[1]);
+    expect(br[1]).toBeCloseTo(tr[1], 9);
+    // The page's world-space extent swapped axes: 400 px wide, 800 px tall.
+    const [x0, y0] = project(tl, v.zoom);
+    const [x1, y1] = project(br, v.zoom);
+    expect(Math.abs(x1 - x0)).toBeCloseTo(400, 6);
+    expect(Math.abs(y1 - y0)).toBeCloseTo(800, 6);
+  });
+
+  it("viewportBbox is the envelope of the rotated page", () => {
+    const flat = viewportBbox(fitBounds(bbox, 800, 400));
+    const turned = viewportBbox(fitBounds(bbox, 800, 400, 45));
+    expect(turned[0]).toBeLessThan(flat[0]);
+    expect(turned[2]).toBeGreaterThan(flat[2]);
+    expect(turned[1]).toBeLessThan(flat[1]);
+    expect(turned[3]).toBeGreaterThan(flat[3]);
+    expect(viewportBbox(fitBounds(bbox, 800, 400, 360))).toEqual(flat);
+  });
+
+  it("tileGrid keeps the screen rects and rotates the centres", () => {
+    const flat = fitBounds(bbox, 1000, 600);
+    const turned = { ...flat, bearing: 30 };
+    const tile = { width: 256, height: 256 };
+    const flatTiles = tileGrid(flat, tile);
+    const turnedTiles = tileGrid(turned, tile);
+    expect(turnedTiles.map(({ center: _, ...rect }) => rect)).toEqual(
+      flatTiles.map(({ center: _, ...rect }) => rect),
+    );
+    const [cx, cy] = project(turned.center, turned.zoom);
+    for (const t of turnedTiles) {
+      const [x, y] = project(t.center, turned.zoom);
+      const [ex, ey] = rotateOffset(
+        [t.x + t.width / 2 - 500, t.y + t.height / 2 - 300],
+        30,
+      );
+      expect(x - cx).toBeCloseTo(ex, 6);
+      expect(y - cy).toBeCloseTo(ey, 6);
+    }
+  });
+
+  it("tileGrid at bearing 90 is the unrotated grid turned a quarter turn", () => {
+    const flat = fitBounds(bbox, 1000, 600);
+    const tile = { width: 200, height: 200 };
+    const turnedTiles = tileGrid({ ...flat, bearing: 90 }, tile);
+    const [cx, cy] = project(flat.center, flat.zoom);
+    for (const t of turnedTiles) {
+      const [x, y] = project(t.center, flat.zoom);
+      // A screen offset (sx, sy) from the centre lands at world (-sy, sx).
+      expect(x - cx).toBeCloseTo(-(t.y + t.height / 2 - 300), 6);
+      expect(y - cy).toBeCloseTo(t.x + t.width / 2 - 500, 6);
+    }
+  });
+
+  it("fitsWorld sees a rotated corner leave the world", () => {
+    // A wide strip near the pole fits north-up, but its corners cross the
+    // latitude limit once turned.
+    const v = fitBounds([-60, 70, 60, 84], 1200, 300);
+    expect(fitsWorld(v)).toBe(true);
+    expect(fitsWorld({ ...v, bearing: 30 })).toBe(false);
+    expect(fitsWorld({ ...v, bearing: 180 })).toBe(true);
   });
 });

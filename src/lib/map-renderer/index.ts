@@ -11,7 +11,12 @@ import {
   ensureOpaqueBackground,
   OPAQUE_BACKGROUND_LAYER,
 } from "../styles/index.ts";
-import { project, unproject, type TileRect } from "../viewport/index.ts";
+import {
+  project,
+  rotateOffset,
+  unproject,
+  type TileRect,
+} from "../viewport/index.ts";
 
 setWorkerUrl(maplibreWorkerUrl);
 
@@ -25,7 +30,7 @@ export interface MapRendererOptions {
 }
 
 export interface MapRenderer {
-  render(tile: TileRect, zoom: number): Promise<Uint8Array>;
+  render(tile: TileRect, zoom: number, bearing?: number): Promise<Uint8Array>;
   destroy(): void;
 }
 
@@ -83,6 +88,10 @@ export async function createMapRenderer(
     pixelRatio,
     maxCanvasSize: [canvasWidth, canvasHeight],
     canvasContextAttributes: { preserveDrawingBuffer: true },
+    // MapLibre's default constraint pans a camera whose unrotated frame leaves
+    // the ±85.051129° band, which would misalign an edge tile of a rotated
+    // page; the caller has already checked the whole page fits the world.
+    transformConstrain: (center, zoom) => ({ center, zoom }),
     fadeDuration: 0,
     trackResize: false,
     interactive: false,
@@ -154,7 +163,11 @@ export async function createMapRenderer(
     const scratch = new Uint8Array(canvasWidth * canvasHeight * 4);
     let rendering = false;
 
-    async function render(tile: TileRect, zoom: number): Promise<Uint8Array> {
+    async function render(
+      tile: TileRect,
+      zoom: number,
+      bearing = 0,
+    ): Promise<Uint8Array> {
       if (rendering) {
         throw new Error("render() called while a render is in progress");
       }
@@ -207,7 +220,11 @@ export async function createMapRenderer(
           };
           rejectPending = fail;
           map.once("idle", onIdle);
-          map.jumpTo({ center: alignedCenter(tile, tileSize, zoom), zoom });
+          map.jumpTo({
+            center: alignedCenter(tile, tileSize, zoom, bearing),
+            zoom,
+            bearing,
+          });
         });
       } finally {
         rendering = false;
@@ -229,15 +246,14 @@ function alignedCenter(
   tile: TileRect,
   tileSize: { width: number; height: number },
   zoom: number,
+  bearing: number,
 ): [number, number] {
   const [x, y] = project(tile.center, zoom);
-  return unproject(
-    [
-      x + (tileSize.width - tile.width) / 2,
-      y + (tileSize.height - tile.height) / 2,
-    ],
-    zoom,
+  const [dx, dy] = rotateOffset(
+    [(tileSize.width - tile.width) / 2, (tileSize.height - tile.height) / 2],
+    bearing,
   );
+  return unproject([x + dx, y + dy], zoom);
 }
 
 /** readPixels rows are bottom-up; the result is top-down, RGB or RGBA. */

@@ -5,8 +5,10 @@ import { baseUrl, describeEngines, harnessUrl, usePage } from "./browsers.ts";
 import {
   fitBounds,
   project,
+  rotateOffset,
   tileGrid,
   type Bbox,
+  type LngLat,
   type TileRect,
   type Viewport,
 } from "../src/lib/viewport/index.ts";
@@ -57,6 +59,24 @@ function projectedRect(
   };
 }
 
+/** Where a lng/lat lands in the viewport's pixels, at any bearing. */
+function toScreen(v: Viewport, point: LngLat): [number, number] {
+  const [cx, cy] = project(v.center, v.zoom);
+  const [x, y] = project(point, v.zoom);
+  const [sx, sy] = rotateOffset([x - cx, y - cy], -(v.bearing ?? 0));
+  return [sx + v.width / 2, sy + v.height / 2];
+}
+
+/** `[a, b]` corners in screen order, from the square's NW clockwise. */
+function squareCorners([west, south, east, north]: Bbox): LngLat[] {
+  return [
+    [west, north],
+    [east, north],
+    [east, south],
+    [west, south],
+  ];
+}
+
 function pixelAt(
   pixels: Uint8Array,
   width: number,
@@ -81,6 +101,7 @@ interface RenderOptions {
   channels?: 3 | 4;
   tiles: TileRect[];
   zoom: number;
+  bearing?: number;
   renderTimeoutMs?: number;
 }
 
@@ -98,6 +119,7 @@ async function renderTiles(
       channels?: 3 | 4;
       tiles: import("../src/lib/viewport/index.ts").TileRect[];
       zoom: number;
+      bearing?: number;
       renderTimeoutMs?: number;
     } = JSON.parse(json);
     const renderer = await window.mapPrinter.createMapRenderer({
@@ -110,7 +132,7 @@ async function renderTiles(
     try {
       const out: Uint8Array[] = [];
       for (const tile of opts.tiles) {
-        out.push(await renderer.render(tile, opts.zoom));
+        out.push(await renderer.render(tile, opts.zoom, opts.bearing));
       }
       return out;
     } finally {
@@ -266,6 +288,73 @@ describeEngines((engine) => {
       expectColor(pixelAt(rendered[0], tiles[0].width, x, y), WHITE);
     }
   });
+
+  test("viewport's rotation convention matches MapLibre's", async () => {
+    const v = fitBounds(VIEW_BBOX, 256, 200, 30);
+    const points = squareCorners(SQUARE);
+    const theirs = await page.evaluate(
+      (json: string) => {
+        const { camera, points } = JSON.parse(json) as {
+          camera: import("../src/lib/viewport/index.ts").Viewport;
+          points: import("../src/lib/viewport/index.ts").LngLat[];
+        };
+        return window.mapPrinter.mapLibreProject(camera, points);
+      },
+      JSON.stringify({ camera: v, points }),
+    );
+    for (const [i, point] of points.entries()) {
+      const [x, y] = toScreen(v, point);
+      expect(theirs[i][0], `x of corner ${i}`).toBeCloseTo(x, 3);
+      expect(theirs[i][1], `y of corner ${i}`).toBeCloseTo(y, 3);
+    }
+  });
+
+  test.each([
+    { bearing: 90, pixelRatio: 1 },
+    { bearing: 30, pixelRatio: 1 },
+    { bearing: -135, pixelRatio: 2 },
+  ])(
+    "renders the square turned by $bearing° at pixel ratio $pixelRatio",
+    async ({ bearing, pixelRatio }) => {
+      // Square: the tile is square too, so any bearing keeps it inside.
+      const v = fitBounds([-4, -4, 4, 4], 256, 256, bearing);
+      const [tile] = tileGrid(v, TILE_SIZE);
+      const width = tile.width * pixelRatio;
+      const pixels = await renderTile(page, {
+        style: fixtureStyle,
+        pixelRatio,
+        tile,
+        zoom: v.zoom,
+        bearing,
+      });
+
+      const centre = toScreen(v, [0, 0]);
+      const corners = squareCorners(SQUARE).map((c) => toScreen(v, c));
+      const toward = (
+        [x, y]: [number, number],
+        fraction: number,
+      ): [number, number] => [
+        (centre[0] + (x - centre[0]) * fraction) * pixelRatio,
+        (centre[1] + (y - centre[1]) * fraction) * pixelRatio,
+      ];
+      expectColor(
+        pixelAt(pixels, width, centre[0] * pixelRatio, centre[1] * pixelRatio),
+        RED,
+      );
+      for (const corner of corners) {
+        expectColor(pixelAt(pixels, width, ...toward(corner, 0.85)), RED);
+        expectColor(pixelAt(pixels, width, ...toward(corner, 1.15)), WHITE);
+      }
+      // Each edge midpoint, just inside and just outside.
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % 4];
+        const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        expectColor(pixelAt(pixels, width, ...toward(mid, 0.9)), RED);
+        expectColor(pixelAt(pixels, width, ...toward(mid, 1.1)), WHITE);
+      }
+    },
+  );
 
   test("renders RGBA with an opaque alpha channel", async () => {
     const v = fitBounds(VIEW_BBOX, 256, 256);

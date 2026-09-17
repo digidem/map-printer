@@ -21,7 +21,7 @@ createMapRenderer(opts: {
 }): Promise<MapRenderer>
 
 interface MapRenderer {
-  render(tile: TileRect, zoom: number): Promise<Uint8Array>;
+  render(tile: TileRect, zoom: number, bearing?: number): Promise<Uint8Array>;
   destroy(): void;
 }
 
@@ -40,8 +40,12 @@ canvas means the tile is too large for this machine (see `maxTileSize`).
 The map options are `pixelRatio`, `maxCanvasSize` set to the expected canvas
 size (MapLibre's default is 4096×4096, which would clamp larger tiles),
 `canvasContextAttributes: { preserveDrawingBuffer: true }`, `fadeDuration: 0`,
-`trackResize: false`, `interactive: false`, `attributionControl: false`. The
-container is `position: fixed; left: -100000px` with an explicit size — never
+`trackResize: false`, `interactive: false`, `attributionControl: false`, and
+a `transformConstrain` that returns the camera unchanged: MapLibre's default
+pans any camera whose unrotated frame crosses ±85.051129°, which would
+misalign an edge tile of a rotated page. The caller is expected to have
+rejected a page that leaves the world (`viewport.fitsWorld`). The container
+is `position: fixed; left: -100000px` with an explicit size — never
 `display: none`, which makes MapLibre fall back to 400×300.
 
 MapLibre's WebGL2 context is premultiplied, so every exported pixel has to be
@@ -51,12 +55,14 @@ styles so relative sprite, glyph and source references resolve) gets the same
 `OPAQUE_BACKGROUND_LAYER` inserted below its first layer on `style.load` when
 it has no background layer.
 
-### `render(tile, zoom)`
+### `render(tile, zoom, bearing = 0)`
 
 `tile` is a `viewport.tileGrid` rect at most `tileSize` in each dimension. The
-map jumps to the center that puts the rect in the canvas's top-left corner
-(`tile.center` shifted by half the difference between `tileSize` and the rect,
-so an edge tile is cropped at the origin rather than at a fractional offset),
+map jumps to `zoom` and `bearing` at the center that puts the rect in the
+canvas's top-left corner (`tile.center` shifted by half the difference between
+`tileSize` and the rect — a screen-space shift, so it is turned by the bearing
+before being applied in world px — so an edge tile is cropped at the origin
+rather than at a fractional offset),
 waits for MapLibre's `idle` event and reads the pixels inside that handler,
 before any later frame can repaint the preserved drawing buffer. The result is
 a fresh `Uint8Array` of `floor(tile.width × pixelRatio) ×
@@ -66,6 +72,13 @@ bottom-up), alpha dropped when `channels === 3`.
 `idle` is registered before `jumpTo` because it fires synchronously inside a
 render frame as soon as nothing is dirty. Renders are sequential: calling
 `render` while one is in flight rejects.
+
+Raster, hillshade and colour-relief layers are drawn with MapLibre's
+pixel-aligned matrix, which snaps the camera's world-pixel centre to a whole
+number. North-up, every tile centre of a grid shares one fractional part, so
+the snap is identical across tiles; a rotated grid's centres do not, so
+raster imagery can jog by up to one device pixel across a tile seam. Vector
+layers use the exact matrix and are unaffected.
 
 The rect is CSS px while the result is device px, so a caller that also feeds
 `mosaic` — whose rects are output pixels — passes `mosaic` the `tileGrid` rects

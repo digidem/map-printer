@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   loadSettings,
   parseBbox,
+  parseBearing,
   saveSettings,
 } from "./settings.ts";
 
@@ -54,6 +55,23 @@ describe("parseBbox", () => {
   });
 });
 
+describe("parseBearing", () => {
+  test("accepts any finite number of degrees and wraps it", () => {
+    expect(parseBearing("0")).toBe(0);
+    expect(parseBearing(" -45.5 ")).toBe(-45.5);
+    expect(parseBearing("270")).toBe(-90);
+    expect(parseBearing("180")).toBe(180);
+    expect(parseBearing("-180")).toBe(180);
+  });
+
+  test("rejects blanks and non-numbers", () => {
+    expect(parseBearing("")).toBeNull();
+    expect(parseBearing("  ")).toBeNull();
+    expect(parseBearing("north")).toBeNull();
+    expect(parseBearing("Infinity")).toBeNull();
+  });
+});
+
 describe("loadSettings", () => {
   beforeEach(() => {
     globalThis.localStorage = new MemoryStorage() as unknown as Storage;
@@ -78,6 +96,7 @@ describe("loadSettings", () => {
         bbox: [1, 2, "three", 4],
         dpi: 150,
         previewBbox: "yes",
+        bearing: "45",
       }),
     );
     expect(loadSettings()).toEqual({
@@ -85,6 +104,11 @@ describe("loadSettings", () => {
       style: "https://example.com/style.json",
       height: 500,
     });
+  });
+
+  test("wraps a stored bearing", () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ bearing: 270 }));
+    expect(loadSettings().bearing).toBe(-90);
   });
 
   test("round-trips through saveSettings", () => {
