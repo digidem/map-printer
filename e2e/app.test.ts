@@ -144,10 +144,12 @@ describeEngines((engine) => {
   });
 
   test("exports a raster tile template in the fixture palette", async () => {
-    await page.fill("#style", rasterTemplate);
     await page.fill("#bbox", RASTER_BBOX);
     await page.fill("#width", String(RASTER_WIDTH_MM));
     await page.fill("#height", String(RASTER_HEIGHT_MM));
+    // Last: the debounced re-resolve would otherwise re-enable Export before
+    // waitForStyle sees it go disabled.
+    await page.fill("#style", rasterTemplate);
     await waitForStyle(page);
 
     const [download] = await Promise.all([
