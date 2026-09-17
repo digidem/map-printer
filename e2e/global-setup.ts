@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type PreviewServer, preview } from "vite";
+import { noCacheForServiceWorker } from "../vite.config.ts";
 
 const PORT = 4174;
 const FIXTURES_DIR = path.resolve("e2e/fixtures");
@@ -15,6 +16,7 @@ export async function setup() {
   server = await preview({
     preview: { port: PORT, strictPort: true },
     plugins: [
+      noCacheForServiceWorker,
       {
         name: "e2e-fixtures",
         configurePreviewServer(server) {

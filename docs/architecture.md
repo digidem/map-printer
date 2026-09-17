@@ -37,7 +37,7 @@ download/      PNG bytes → service-worker download     (WritableStream)
 `export/` composes the five modules into one `exportMap()` call the UI uses.
 Everything after the renderer is Web Streams with backpressure, so rendering
 pauses while the browser writes to disk, and the memory high-water mark is
-one band of tiles plus a few compressed chunks.
+one band of tiles, the tile just rendered and a few compressed chunks.
 
 ## Modules
 
@@ -196,6 +196,9 @@ downloadReady(): Promise<void>               // resolves once a worker controls 
 startDownload(opts: { filename: string; contentType: string }): Promise<{ writable: WritableStream<Uint8Array>; cleanup(): void }>
 ```
 
+`downloadReady()` rejects if registering the worker failed, so the UI is not
+left waiting for a `controllerchange` that is never coming.
+
 `startDownload` inserts the hidden iframe synchronously before any `await`
 (Safari user activation), waits for the worker's `downloadStarted` ack, then
 returns a `WritableStream` backed by the MessagePort sink (one `PULL` credit
@@ -216,8 +219,10 @@ exportMap(opts: {
 ```
 
 Computes the viewport (CSS size = px / pixelRatio), chooses the tile size
-(width = min(maxTileSize.width, viewport width); height so one band,
-`cols × tileW × tileH × 3` bytes, stays under 64 MiB), builds the renderer,
+(width = min(maxTileSize.width, viewport width); height so the band plus the
+renderer's returned tile and its RGBA scratch,
+`tileW × tileH × pixelRatio² × (3·cols + 3 + 4)` bytes, stay under 64 MiB),
+builds the renderer,
 and pipes `mosaic → png-encoder → download`. Always destroys the renderer
 and cleans up the download in `finally`.
 
