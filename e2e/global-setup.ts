@@ -35,7 +35,12 @@ export async function setup() {
             }
             const type = CONTENT_TYPES[path.extname(file)];
             if (type) res.setHeader("Content-Type", type);
-            fs.createReadStream(file).pipe(res);
+            const delay = Number(url.searchParams.get("delay"));
+            if (!delay) return fs.createReadStream(file).pipe(res);
+            // A held-up response has to be fetched afresh every time for the
+            // delay to be worth anything.
+            res.setHeader("Cache-Control", "no-store");
+            setTimeout(() => fs.createReadStream(file).pipe(res), delay);
           });
         },
       },
