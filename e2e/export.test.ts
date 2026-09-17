@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { decode, type DecodedPng } from "fast-png";
-import { chromium, type Browser, type Page } from "playwright";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Page } from "playwright";
+import { beforeAll, expect, test } from "vitest";
+import { describeEngines, harnessUrl, usePage } from "./browsers.ts";
 import {
   fitBounds,
   project,
@@ -11,14 +11,7 @@ import {
   type Viewport,
 } from "../src/lib/viewport/index.ts";
 
-const baseUrl = "http://localhost:4174";
-const harnessUrl = `${baseUrl}/e2e/harness/index.html`;
 const fixtureStyle = "/fixtures/style-geojson.json";
-
-const chromiumArgs =
-  process.platform === "darwin"
-    ? ["--use-gl=angle", "--use-angle=metal"]
-    : ["--use-gl=angle", "--use-angle=swiftshader"];
 
 /** The red square in the fixture style. */
 const SQUARE: Bbox = [-1, -1, 1, 1];
@@ -79,27 +72,15 @@ interface ExportRequest {
   tileSize?: { width: number; height: number };
 }
 
-describe("chromium", () => {
-  let browser: Browser;
+describeEngines((engine) => {
+  const browser = usePage(engine);
   let page: Page;
-  let downloadDir: string;
 
   beforeAll(async () => {
-    downloadDir = fs.mkdtempSync(path.join(os.tmpdir(), "map-printer-e2e-"));
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--ignore-gpu-blocklist", "--enable-webgl", ...chromiumArgs],
-    });
-    page = await browser.newPage({ acceptDownloads: true });
-    page.on("pageerror", (error) => console.error("[page]", error));
+    page = browser.page;
     await page.goto(harnessUrl);
     await page.waitForFunction(() => Boolean(window.mapPrinter));
     await page.evaluate(() => window.mapPrinter.downloadReady());
-  });
-
-  afterAll(async () => {
-    await browser?.close();
-    if (downloadDir) fs.rmSync(downloadDir, { recursive: true, force: true });
   });
 
   /** Exports through the service worker and decodes what reached disk. */
@@ -125,7 +106,7 @@ describe("chromium", () => {
       }, JSON.stringify(request)),
     ]);
     expect(download.suggestedFilename()).toBe(request.filename);
-    const file = path.join(downloadDir, download.suggestedFilename());
+    const file = path.join(browser.downloadDir, download.suggestedFilename());
     await download.saveAs(file);
     return { result, png: decode(fs.readFileSync(file)) };
   }
@@ -192,7 +173,11 @@ describe("chromium", () => {
       tileSize,
     });
 
-    const v = fitBounds(TIGHT_BBOX, widthPx / pixelRatio, heightPx / pixelRatio);
+    const v = fitBounds(
+      TIGHT_BBOX,
+      widthPx / pixelRatio,
+      heightPx / pixelRatio,
+    );
     expect(png.width).toBe(widthPx);
     expect(png.height).toBe(heightPx);
     expect(result.progress).toHaveLength(3);
@@ -228,7 +213,11 @@ describe("chromium", () => {
 
     for (const y of sampleAlong(square.top, square.bottom, margin)) {
       expectColor(pixelAt(png, square.left + margin, y), RED, `left in ${y}`);
-      expectColor(pixelAt(png, square.left - margin, y), WHITE, `left out ${y}`);
+      expectColor(
+        pixelAt(png, square.left - margin, y),
+        WHITE,
+        `left out ${y}`,
+      );
       expectColor(pixelAt(png, square.right - margin, y), RED, `right in ${y}`);
       expectColor(
         pixelAt(png, square.right + margin, y),
@@ -252,7 +241,9 @@ describe("chromium", () => {
     }
   });
 
-  test("aborting mid-export fails the download", async () => {
+  const testFailedDownload = engine.reportsFailedDownloads ? test : test.skip;
+
+  testFailedDownload("aborting mid-export fails the download", async () => {
     const request: ExportRequest = {
       style: fixtureStyle,
       bbox: TIGHT_BBOX,
@@ -298,27 +289,30 @@ describe("chromium", () => {
     expect(png.width).toBe(320);
   });
 
-  test("a style that 404s fails the download rather than truncating it", async () => {
-    const [download, message] = await Promise.all([
-      page.waitForEvent("download", { timeout: 60_000 }),
-      page.evaluate(async () => {
-        try {
-          await window.mapPrinter.exportMap({
-            style: "/fixtures/no-such-style.json",
-            bbox: [-4, -3, 4, 3],
-            widthPx: 320,
-            heightPx: 240,
-            pixelRatio: 1,
-            filename: "missing-style.png",
-          });
-          return "resolved";
-        } catch (err) {
-          return err instanceof Error ? err.message : String(err);
-        }
-      }),
-    ]);
+  testFailedDownload(
+    "a style that 404s fails the download rather than truncating it",
+    async () => {
+      const [download, message] = await Promise.all([
+        page.waitForEvent("download", { timeout: 60_000 }),
+        page.evaluate(async () => {
+          try {
+            await window.mapPrinter.exportMap({
+              style: "/fixtures/no-such-style.json",
+              bbox: [-4, -3, 4, 3],
+              widthPx: 320,
+              heightPx: 240,
+              pixelRatio: 1,
+              filename: "missing-style.png",
+            });
+            return "resolved";
+          } catch (err) {
+            return err instanceof Error ? err.message : String(err);
+          }
+        }),
+      ]);
 
-    expect(message).not.toBe("resolved");
-    expect(await download.failure()).not.toBeNull();
-  });
+      expect(message).not.toBe("resolved");
+      expect(await download.failure()).not.toBeNull();
+    },
+  );
 });

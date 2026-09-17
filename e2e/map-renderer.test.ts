@@ -1,6 +1,7 @@
-import { chromium, type Browser, type Page } from "playwright";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Page } from "playwright";
+import { beforeAll, expect, test } from "vitest";
 import type { StyleSpecification } from "maplibre-gl";
+import { baseUrl, describeEngines, harnessUrl, usePage } from "./browsers.ts";
 import {
   fitBounds,
   project,
@@ -10,14 +11,7 @@ import {
   type Viewport,
 } from "../src/lib/viewport/index.ts";
 
-const baseUrl = "http://localhost:4174";
-const harnessUrl = `${baseUrl}/e2e/harness/index.html`;
 const fixtureStyle = "/fixtures/style-geojson.json";
-
-const chromiumArgs =
-  process.platform === "darwin"
-    ? ["--use-gl=angle", "--use-angle=metal"]
-    : ["--use-gl=angle", "--use-angle=swiftshader"];
 
 /** The red square in the fixture style. */
 const SQUARE: Bbox = [-1, -1, 1, 1];
@@ -158,23 +152,14 @@ async function createRenderer(
   }, JSON.stringify(opts));
 }
 
-describe("chromium", () => {
-  let browser: Browser;
+describeEngines((engine) => {
+  const browser = usePage(engine);
   let page: Page;
 
   beforeAll(async () => {
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--ignore-gpu-blocklist", "--enable-webgl", ...chromiumArgs],
-    });
-    page = await browser.newPage();
-    page.on("pageerror", (error) => console.error("[page]", error));
+    page = browser.page;
     await page.goto(harnessUrl);
     await page.waitForFunction(() => Boolean(window.mapPrinter));
-  });
-
-  afterAll(async () => {
-    await browser?.close();
   });
 
   test("maxTileSize reports a usable size", async () => {
