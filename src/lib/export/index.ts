@@ -15,7 +15,9 @@ import {
   fitsWorld,
   tileGrid,
   viewportBbox,
+  viewportCorners,
   type Bbox,
+  type LngLat,
   type TileRect,
 } from "../viewport/index.ts";
 
@@ -27,6 +29,8 @@ export interface ExportOptions {
   widthPx: number;
   heightPx: number;
   pixelRatio: number;
+  /** Degrees clockwise from north up; the page turns about the bbox centre. */
+  bearing?: number;
   filename: string;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
@@ -36,8 +40,12 @@ export interface ExportOptions {
 }
 
 export interface ExportResult {
+  /** Envelope of the page; equals `corners` only at bearing 0. */
   bbox: Bbox;
+  /** Page corners in screen order: top-left, top-right, bottom-right, bottom-left. */
+  corners: [LngLat, LngLat, LngLat, LngLat];
   zoom: number;
+  bearing: number;
 }
 
 const CHANNELS = 3;
@@ -73,11 +81,16 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
     );
   }
 
-  const viewport = fitBounds(opts.bbox, widthPx / pixelRatio, heightPx / pixelRatio);
+  const viewport = fitBounds(
+    opts.bbox,
+    widthPx / pixelRatio,
+    heightPx / pixelRatio,
+    opts.bearing ?? 0,
+  );
   if (!fitsWorld(viewport)) {
     throw new RangeError(
-      "This area is taller than the map at the zoom it would export at — " +
-        "widen the area or reduce the height",
+      "This page reaches past the edge of the map at the zoom it would " +
+        "export at — widen the area, reduce the height or turn it less",
     );
   }
 
@@ -114,7 +127,7 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
       height: heightPx,
       channels: CHANNELS,
       tiles,
-      render: (tile) => map.render(tile.css, viewport.zoom),
+      render: (tile) => map.render(tile.css, viewport.zoom, viewport.bearing),
       onProgress,
       signal,
     })
@@ -139,7 +152,12 @@ export async function exportMap(opts: ExportOptions): Promise<ExportResult> {
     renderer?.destroy();
   }
 
-  return { bbox: viewportBbox(viewport), zoom: viewport.zoom };
+  return {
+    bbox: viewportBbox(viewport),
+    corners: viewportCorners(viewport),
+    zoom: viewport.zoom,
+    bearing: viewport.bearing ?? 0,
+  };
 }
 
 /** The widest tile this GPU can render, and the tallest that keeps the buffers

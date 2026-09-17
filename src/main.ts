@@ -33,6 +33,7 @@ function start(app: HTMLElement) {
   form.settings = settings;
   const preview = new PreviewMap();
   preview.bbox = settings.bbox;
+  preview.bearing = settings.bearing;
   preview.showBbox = settings.previewBbox;
   preview.aspect = settings.width / settings.height;
 
@@ -69,6 +70,7 @@ function start(app: HTMLElement) {
     settings = next;
     saveSettings(settings);
     preview.bbox = settings.bbox;
+    preview.bearing = settings.bearing;
     preview.showBbox = settings.previewBbox;
     preview.aspect = settings.width / settings.height;
     if (styleChanged || tokenChanged) {
@@ -94,6 +96,10 @@ function start(app: HTMLElement) {
         if (form.styleInput === input) form.attribution = attribution;
       },
     );
+  });
+
+  preview.addEventListener("bearing-change", (event) => {
+    form.setBearing((event as CustomEvent<number>).detail);
   });
 
   preview.addEventListener("style-error", (event) => {
@@ -132,7 +138,7 @@ function start(app: HTMLElement) {
   async function runExport() {
     const input = form.styleInput;
     if (!input) return;
-    const { bbox, dpi, height, mapboxToken, width } = settings;
+    const { bbox, bearing, dpi, height, mapboxToken, width } = settings;
     const pixelRatio = dpi / 96;
     controller = new AbortController();
     clearTimeout(savedTimer);
@@ -147,6 +153,7 @@ function start(app: HTMLElement) {
         widthPx: mmToPx(width, dpi, pixelRatio),
         heightPx: mmToPx(height, dpi, pixelRatio),
         pixelRatio,
+        bearing,
         filename: `map-${width}x${height}mm-${dpi}dpi.png`,
         onProgress: (fraction) => {
           form.progress = fraction;

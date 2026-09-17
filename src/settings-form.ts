@@ -12,6 +12,7 @@ import {
   DPI_OPTIONS,
   formatBbox,
   parseBbox,
+  parseBearing,
   type Dpi,
   type Settings,
 } from "./settings.ts";
@@ -57,7 +58,12 @@ export class SettingsForm extends LightElement {
   declare message: ExportMessage | null;
 
   /** Raw text of the fields that can be mid-edit and unparseable. */
-  private declare draft: { bbox: string; width: string; height: string };
+  private declare draft: {
+    bbox: string;
+    width: string;
+    height: string;
+    bearing: string;
+  };
   private declare accepted: boolean;
 
   constructor() {
@@ -72,7 +78,7 @@ export class SettingsForm extends LightElement {
     this.progress = 0;
     this.message = null;
     this.accepted = false;
-    this.draft = { bbox: "", width: "", height: "" };
+    this.draft = { bbox: "", width: "", height: "", bearing: "" };
   }
 
   connectedCallback() {
@@ -81,11 +87,24 @@ export class SettingsForm extends LightElement {
       bbox: formatBbox(this.settings.bbox),
       width: String(this.settings.width),
       height: String(this.settings.height),
+      bearing: formatBearing(this.settings.bearing),
     };
+  }
+
+  /** For the preview map's compass: the field follows the map. */
+  setBearing(bearing: number) {
+    const value = parseBearing(formatBearing(bearing));
+    if (value === null) return;
+    this.draft = { ...this.draft, bearing: formatBearing(value) };
+    if (value !== this.settings.bearing) this.commit({ bearing: value });
   }
 
   private get bbox() {
     return parseBbox(this.draft.bbox);
+  }
+
+  private get bearing() {
+    return parseBearing(this.draft.bearing);
   }
 
   private get widthMm() {
@@ -113,7 +132,12 @@ export class SettingsForm extends LightElement {
     const { width, height } = this.pixelSize;
     const ratio = this.pixelRatio;
     return !fitsWorld(
-      fitBounds(this.settings.bbox, width / ratio, height / ratio),
+      fitBounds(
+        this.settings.bbox,
+        width / ratio,
+        height / ratio,
+        this.settings.bearing,
+      ),
     );
   }
 
@@ -126,6 +150,7 @@ export class SettingsForm extends LightElement {
       this.styleError === null &&
       this.tokenError === null &&
       this.bbox !== null &&
+      this.bearing !== null &&
       this.widthMm !== null &&
       this.heightMm !== null &&
       !this.tooTall
@@ -155,6 +180,14 @@ export class SettingsForm extends LightElement {
     else this.requestUpdate();
   }
 
+  private onBearing(event: Event) {
+    const value = (event.target as HTMLInputElement).value;
+    this.draft = { ...this.draft, bearing: value };
+    const bearing = parseBearing(value);
+    if (bearing !== null) this.commit({ bearing });
+    else this.requestUpdate();
+  }
+
   render() {
     return html`
       <h1 class="mb-1 text-xl font-semibold text-gray-900">Map Printer</h1>
@@ -162,8 +195,8 @@ export class SettingsForm extends LightElement {
         Export a print-resolution PNG of a map area, straight from your browser.
       </p>
       ${this.styleField()} ${this.tokenField()} ${this.sizeFields()}
-      ${this.bboxField()} ${this.dpiField()} ${this.zoomLine()}
-      ${this.attributionBlock()} ${this.actions()}
+      ${this.bboxField()} ${this.bearingField()} ${this.dpiField()}
+      ${this.zoomLine()} ${this.attributionBlock()} ${this.actions()}
     `;
   }
 
@@ -268,8 +301,32 @@ export class SettingsForm extends LightElement {
               previewBbox: (e.target as HTMLInputElement).checked,
             })}
         />
-        Preview bounding box on the map
+        Preview bounding box and page outline on the map
       </label>
+    </div>`;
+  }
+
+  private bearingField(): TemplateResult {
+    const invalid = this.bearing === null;
+    return html`<div class=${FIELD}>
+      <label class=${LABEL} for="bearing">Rotation (degrees)</label>
+      <input
+        id="bearing"
+        type="number"
+        step="any"
+        class="${INPUT} ${invalid ? INVALID_INPUT : ""}"
+        .value=${this.draft.bearing}
+        @input=${(e: Event) => this.onBearing(e)}
+      />
+      <p class=${HINT}>
+        0 is north up, positive turns clockwise about the centre of the
+        bounding box. Or rotate the preview map: right-drag or the compass.
+      </p>
+      ${invalid
+        ? html`<p class=${ERROR} data-error="bearing">
+            Enter a rotation in degrees.
+          </p>`
+        : nothing}
     </div>`;
   }
 
@@ -300,20 +357,23 @@ export class SettingsForm extends LightElement {
     }
     if (this.tooTall) {
       return html`<p class="${FIELD} ${ERROR}" data-error="size">
-        This area is taller than the map at the zoom it would export at — widen
-        the area or reduce the page height.
+        This page reaches past the edge of the map at the zoom it would export
+        at — widen the area, reduce the page height or turn it less.
       </p>`;
     }
     const { width, height } = this.pixelSize;
     const ratio = this.pixelRatio;
-    const { zoom } = fitBounds(
+    const { zoom, bearing = 0 } = fitBounds(
       this.settings.bbox,
       width / ratio,
       height / ratio,
+      this.settings.bearing,
     );
     return html`<p class="${FIELD} text-sm text-gray-700" data-zoom-line>
       Map will export at zoom ${Math.round(zoom * 1000) / 1000} sized
-      ${width}px x ${height}px
+      ${width}px x ${height}px${bearing
+        ? html`, rotated ${formatBearing(bearing)}°`
+        : nothing}
     </p>`;
   }
 
@@ -410,6 +470,11 @@ export class SettingsForm extends LightElement {
 function positiveNumber(text: string): number | null {
   const value = Number(text.trim());
   return text.trim() && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Two decimals is finer than a compass drag resolves and keeps the field short. */
+function formatBearing(bearing: number): string {
+  return String(Math.round(bearing * 100) / 100);
 }
 
 if (!customElements.get("settings-form")) {

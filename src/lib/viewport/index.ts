@@ -6,6 +6,8 @@ export interface Viewport {
   zoom: number;
   width: number;
   height: number;
+  /** Degrees clockwise from north up, as MapLibre's `bearing`; 0 when absent. */
+  bearing?: number;
 }
 
 export interface TileRect {
@@ -91,7 +93,56 @@ export function unproject(point: [number, number], zoom: number): LngLat {
   return [lngFromMercatorX(point[0] / size), latFromMercatorY(point[1] / size)];
 }
 
-export function fitBounds(bbox: Bbox, width: number, height: number): Viewport {
+/** Wraps to `(-180, 180]`, the range MapLibre's `getBearing` reports. */
+export function normalizeBearing(bearing: number): number {
+  if (!isFiniteNumber(bearing)) {
+    throw new TypeError(`bearing must be a finite number, got ${bearing}`);
+  }
+  const wrapped = ((((bearing + 180) % 360) + 360) % 360) - 180;
+  return wrapped === -180 ? 180 : wrapped;
+}
+
+/** A screen-space offset (x right, y down) as a world-pixel offset at
+ *  `bearing`: MapLibre draws the world turned by `-bearing`, so screen axes
+ *  are the world axes turned by `+bearing`. */
+export function rotateOffset(
+  [x, y]: [number, number],
+  bearing: number,
+): [number, number] {
+  const radians = (bearing * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return [x * cos - y * sin, x * sin + y * cos];
+}
+
+/** World px at `v.zoom` under the viewport's screen point `[sx, sy]`. */
+function screenToWorld(
+  v: Viewport,
+  [sx, sy]: [number, number],
+): [number, number] {
+  const [cx, cy] = project(v.center, v.zoom);
+  const [dx, dy] = rotateOffset(
+    [sx - v.width / 2, sy - v.height / 2],
+    v.bearing ?? 0,
+  );
+  return [cx + dx, cy + dy];
+}
+
+function screenCorners(v: Viewport): [number, number][] {
+  return [
+    [0, 0],
+    [v.width, 0],
+    [v.width, v.height],
+    [0, v.height],
+  ];
+}
+
+export function fitBounds(
+  bbox: Bbox,
+  width: number,
+  height: number,
+  bearing = 0,
+): Viewport {
   if (!isValidBbox(bbox)) {
     throw new TypeError(`Invalid bbox: ${JSON.stringify(bbox)}`);
   }
@@ -120,24 +171,41 @@ export function fitBounds(bbox: Bbox, width: number, height: number): Viewport {
     zoom,
     width,
     height,
+    bearing: normalizeBearing(bearing),
   };
 }
 
+/** The viewport's corners as lng/lat in screen order: top-left, top-right,
+ *  bottom-right, bottom-left. */
+export function viewportCorners(
+  v: Viewport,
+): [LngLat, LngLat, LngLat, LngLat] {
+  return screenCorners(v).map((corner) =>
+    unproject(screenToWorld(v, corner), v.zoom),
+  ) as [LngLat, LngLat, LngLat, LngLat];
+}
+
 export function viewportBbox(v: Viewport): Bbox {
-  const [cx, cy] = project(v.center, v.zoom);
-  const [west, north] = unproject([cx - v.width / 2, cy - v.height / 2], v.zoom);
-  const [east, south] = unproject([cx + v.width / 2, cy + v.height / 2], v.zoom);
-  return [west, south, east, north];
+  const corners = viewportCorners(v);
+  const lngs = corners.map((c) => c[0]);
+  const lats = corners.map((c) => c[1]);
+  return [
+    Math.min(...lngs),
+    Math.min(...lats),
+    Math.max(...lngs),
+    Math.max(...lats),
+  ];
 }
 
 export function fitsWorld(v: Viewport): boolean {
   const size = worldSize(v.zoom);
-  const [, cy] = project(v.center, v.zoom);
   const epsilon = size * 1e-9;
-  return (
-    cy - v.height / 2 >= mercatorY(MAX_LATITUDE) * size - epsilon &&
-    cy + v.height / 2 <= mercatorY(-MAX_LATITUDE) * size + epsilon
-  );
+  const top = mercatorY(MAX_LATITUDE) * size - epsilon;
+  const bottom = mercatorY(-MAX_LATITUDE) * size + epsilon;
+  return screenCorners(v).every((corner) => {
+    const [, y] = screenToWorld(v, corner);
+    return y >= top && y <= bottom;
+  });
 }
 
 export function tileGrid(
@@ -148,10 +216,6 @@ export function tileGrid(
   assertPositiveInteger(v.height, "viewport height");
   assertPositiveInteger(tile.width, "tile width");
   assertPositiveInteger(tile.height, "tile height");
-
-  const [cx, cy] = project(v.center, v.zoom);
-  const originX = cx - v.width / 2;
-  const originY = cy - v.height / 2;
 
   const cols = Math.ceil(v.width / tile.width);
   const rows = Math.ceil(v.height / tile.height);
@@ -171,7 +235,7 @@ export function tileGrid(
         width,
         height,
         center: unproject(
-          [originX + x + width / 2, originY + y + height / 2],
+          screenToWorld(v, [x + width / 2, y + height / 2]),
           v.zoom,
         ),
       });

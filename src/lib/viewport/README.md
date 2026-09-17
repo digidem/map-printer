@@ -26,7 +26,10 @@ Check `fitsWorld(v)` before rendering.
 ```ts
 type LngLat = [lng: number, lat: number];
 type Bbox = [west: number, south: number, east: number, north: number];
-type Viewport = { center: LngLat; zoom: number; width: number; height: number };
+type Viewport = {
+  center: LngLat; zoom: number; width: number; height: number;
+  bearing?: number;   // degrees clockwise from north up, as MapLibre's; 0 when absent
+};
 type TileRect = {
   col: number; row: number;
   x: number; y: number; width: number; height: number;
@@ -54,32 +57,56 @@ World pixels at `zoom`, origin at the north-west corner of the world. Latitude
 is clamped to ±85.051129; longitude is not wrapped, so a longitude outside
 ±180 projects outside the world square.
 
-### `fitBounds(bbox, width, height) → Viewport`
+### `fitBounds(bbox, width, height, bearing = 0) → Viewport`
 
-The largest zoom at which `bbox` fits in `width × height` CSS px, with no
-padding and no maximum zoom, centred on the bbox's Mercator midpoint. The zoom
-is fractional. Throws `TypeError` on an invalid bbox or a non-positive size.
+The largest zoom at which `bbox` fits in `width × height` CSS px north-up,
+with no padding and no maximum zoom, centred on the bbox's Mercator midpoint.
+The zoom is fractional. `bearing` does not change the zoom or centre: the page
+turns about the bbox centre, so at most angles part of the bbox falls off it.
+Throws `TypeError` on an invalid bbox, a non-positive size or a non-finite
+bearing.
+
+### `normalizeBearing(deg) → number`
+
+Wrapped to `(-180, 180]`, the range MapLibre's `getBearing` reports.
+
+### `rotateOffset([x, y], bearing) → [x, y]`
+
+A screen-space offset (x right, y down, CSS px) as the world-pixel offset it
+covers on a map at `bearing`. MapLibre draws the world turned by `-bearing`,
+so the screen axes are the world axes turned by `+bearing`; passing
+`-bearing` goes the other way. The identity at bearing 0.
+
+### `viewportCorners(v) → [LngLat, LngLat, LngLat, LngLat]`
+
+The lng/lat under the viewport's corners in screen order: top-left,
+top-right, bottom-right, bottom-left. At bearing 0 these are the north-west,
+north-east, south-east and south-west corners of `viewportBbox(v)`.
 
 ### `viewportBbox(v) → Bbox`
 
-What the viewport actually covers — the bbox `fitBounds` was given, grown on
-the non-limiting axis. West/east may fall outside ±180, and north/south outside
+The envelope of `viewportCorners(v)`: at bearing 0 the bbox `fitBounds` was
+given, grown on the non-limiting axis; for a turned page, the axis-aligned
+box around it. West/east may fall outside ±180, and north/south outside
 ±85.051129, when the viewport is larger than the world at that zoom.
 
 ### `fitsWorld(v: Viewport): boolean`
 
-Whether the viewport's top and bottom edges lie within the ±85.051129 latitude
-band. When false, the export is taller than the world at that zoom and must be
-rejected or letterboxed by the caller.
+Whether every corner of the viewport lies within the ±85.051129 latitude
+band. When false, the page leaves the world at that zoom — taller than it
+north-up, or turned so that a corner crosses the limit — and must be rejected
+or letterboxed by the caller.
 
 ### `tileGrid(v, tile) → TileRect[]`
 
 Row-major list of render rects covering the viewport exactly: no gaps, no
 overlap. `x`, `y`, `width` and `height` are integer CSS px within the viewport;
 right and bottom edge tiles are smaller than `tile` by the remainder. `center`
-is the lng/lat of the rect's own pixel centre at `v.zoom`, so rendering each
-rect as a map of `width × height` CSS px centred there makes the tiles abut
-exactly.
+is the lng/lat under the rect's own pixel centre at `v.zoom` and `v.bearing`,
+so rendering each rect as a map of `width × height` CSS px centred there, at
+the same zoom and bearing, makes the tiles abut exactly: MapLibre turns the
+map rigidly about the screen centre, so a smaller map centred on the point
+under a sub-rectangle's centre shows exactly that sub-rectangle.
 
 The viewport and tile sizes must be positive integers — `TypeError` otherwise.
 Rounding a fractional CSS size is the caller's decision, because the pixel

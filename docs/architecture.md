@@ -13,13 +13,13 @@ is no server other than the tile servers the map style points at.
 ## Data flow
 
 ```
-settings (URL, bbox, mm, dpi)
+settings (URL, bbox, mm, dpi, bearing)
   │
   ▼
 styles/        resolve URL → MapLibre style + attribution + transformRequest
   │
   ▼
-viewport/      bbox + px size → {center, zoom}; tile grid → per-tile centers
+viewport/      bbox + px size + bearing → {center, zoom, bearing}; tile grid → per-tile centers
   │
   ▼
 map-renderer/  hidden MapLibre map, one tile at a time → Uint8Array RGB rows
@@ -77,20 +77,29 @@ latitude clamped to ±85.051129). No maplibre import.
 
 ```ts
 type Bbox = [west: number, south: number, east: number, north: number];
-type Viewport = { center: [lng, lat]; zoom: number; width: number; height: number }; // CSS px
+type Viewport = { center: [lng, lat]; zoom: number; width: number; height: number; bearing?: number }; // CSS px, degrees
 
 isValidBbox(b: unknown): b is Bbox
-fitBounds(bbox: Bbox, width: number, height: number): Viewport   // no padding
-viewportBbox(v: Viewport): Bbox                                   // what the viewport actually covers
+fitBounds(bbox: Bbox, width: number, height: number, bearing = 0): Viewport   // no padding
+viewportCorners(v: Viewport): [LngLat, LngLat, LngLat, LngLat]     // page corners, screen order from top-left
+viewportBbox(v: Viewport): Bbox                                   // envelope of the corners
+fitsWorld(v: Viewport): boolean                                   // every corner inside ±85.051129°
 project(lngLat, zoom): [x, y]  /  unproject([x, y], zoom): [lng, lat]  // world px at zoom
+rotateOffset([x, y], bearing): [x, y]                             // screen-space offset → world px offset
+normalizeBearing(deg): number                                     // wrapped to (-180, 180], as MapLibre reports it
 tileGrid(v: Viewport, tile: { width: number; height: number }): TileRect[]
   // row-major list of { col, row, x, y, width, height, center: [lng, lat] }
   // x/y/width/height in CSS px of the full viewport; edge tiles are smaller
 mmToPx(mm: number, dpi: number): number
 ```
 
-Tile centers are computed at the viewport zoom in world pixel space so tiles
-abut exactly at integer pixel boundaries.
+Tile rects live in screen space, and each rect's `center` is the world point
+under its centre pixel — for a rotated page, its screen offset from the page
+centre turned by the bearing. MapLibre rotates rigidly about the screen
+centre, so a tile-sized map at the same zoom and bearing centred there shows
+exactly that rect's pixels and tiles abut exactly. `fitBounds` keeps the
+north-up zoom and centre; the bearing only turns the page about the bbox
+centre, so parts of the bbox can fall off the page.
 
 ### `mosaic` (pure, unit-tested)
 
@@ -151,7 +160,7 @@ createMapRenderer(opts: {
 }): Promise<MapRenderer>
 
 interface MapRenderer {
-  render(tile: TileRect, zoom: number): Promise<Uint8Array>; // cropped to tile.width/height, top-down
+  render(tile: TileRect, zoom: number, bearing = 0): Promise<Uint8Array>; // cropped to tile.width/height, top-down
   destroy(): void;
 }
 maxTileSize(pixelRatio: number): { width: number; height: number }  // from a probe WebGL2 context
@@ -163,14 +172,24 @@ One hidden `maplibregl.Map`, created once and reused for every tile:
   `display: none`, which makes MapLibre fall back to 400×300).
 - options: `pixelRatio`, `canvasContextAttributes: { preserveDrawingBuffer: true }`,
   `maxCanvasSize` from the probe's `MAX_TEXTURE_SIZE`, `fadeDuration: 0`,
-  `trackResize: false`, `interactive: false`, `attributionControl: false`.
+  `trackResize: false`, `interactive: false`, `attributionControl: false`,
+  and a no-op `transformConstrain`: MapLibre's default pans a camera whose
+  unrotated frame crosses ±85.051129°, which would misalign an edge tile of a
+  rotated page. `export` has already rejected a page that leaves the world.
 - after construction, assert `canvas.width === floor(tileSize.width * pixelRatio)`
   or throw: MapLibre silently lowers the pixel ratio when a canvas is too big.
-- `render`: register `once("idle")` before `jumpTo({ center, zoom })`, race it
-  against `renderTimeoutMs` and against any `error` event whose source is a
-  tile or the style; then `gl.readPixels` into a reusable scratch buffer,
-  flip rows (WebGL is bottom-up), drop alpha when `channels === 3`, crop to
-  the tile rect, and return a fresh `Uint8Array`.
+- `render`: register `once("idle")` before `jumpTo({ center, zoom, bearing })`,
+  race it against `renderTimeoutMs` and against any `error` event whose
+  source is a tile or the style; then `gl.readPixels` into a reusable scratch
+  buffer, flip rows (WebGL is bottom-up), drop alpha when `channels === 3`,
+  crop to the tile rect, and return a fresh `Uint8Array`. The shift that puts
+  an edge tile in the canvas's top-left corner is a screen-space offset, so
+  it is turned by the bearing before being applied in world px.
+- raster, hillshade and colour-relief layers are drawn with MapLibre's
+  pixel-aligned matrix, which snaps the camera centre to whole world px. At
+  bearing 0 every tile centre shares one fractional part so the snap is the
+  same; a rotated page's tile centres do not, so raster imagery can jog by up
+  to a device pixel across a seam. Vector layers are unaffected.
 - `render` takes the CSS-px rect from `tileGrid` and returns
   `floor(tile.width · pixelRatio) × floor(tile.height · pixelRatio)` pixels, so
   `export` hands `mosaic` (whose rects are output pixels) the rects scaled by
@@ -216,10 +235,11 @@ being flushed to disk.
 exportMap(opts: {
   style: string | StyleSpecification; transformRequest?;
   bbox: Bbox; widthPx: number; heightPx: number; pixelRatio: number;
+  bearing?: number;
   filename: string;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
-}): Promise<{ bbox: Bbox; zoom: number }>   // resolves when the download is fully written
+}): Promise<{ bbox: Bbox; corners; zoom: number; bearing: number }>   // resolves when the download is fully written
 ```
 
 Computes the viewport (CSS size = px / pixelRatio), chooses the tile size
@@ -236,18 +256,20 @@ and cleans up the download in `finally`.
 light DOM (so Tailwind applies): `<settings-form>` and `<preview-map>`. The
 layout and fields match the previous app: style/tile URL, Mapbox token
 (shown only for Mapbox URLs), width and height in mm, bbox `W,S,E,N`,
-preview-bbox toggle, DPI select (96/192/288/384), the "exports at zoom Z,
-W×H px" line, the attribution text with one "I will include this
-attribution" checkbox, Export / Cancel and a progress bar.
+preview-bbox toggle, rotation in degrees, DPI select (96/192/288/384), the
+"exports at zoom Z, W×H px" line, the attribution text with one "I will
+include this attribution" checkbox, Export / Cancel and a progress bar.
 
 Settings persist to `localStorage` under `map-printer-settings`, parsed
 defensively (defaults merged, invalid values replaced). Validation is
 inline: invalid fields are marked and Export is disabled until they pass.
 
 The preview map is a normal interactive MapLibre map sized to the paper
-aspect ratio with a dashed bbox overlay, plus MapLibre's attribution
-control. Style errors (bad URL, bad token) mark the field instead of
-tearing down the map.
+aspect ratio with a dashed bbox overlay and a solid outline of the page as it
+will print, plus MapLibre's navigation and attribution controls. The map is
+shown at the export bearing; rotating it (right-drag or the compass) writes
+the bearing back to the form, and the form's field turns the map. Style
+errors (bad URL, bad token) mark the field instead of tearing down the map.
 
 Unsupported browsers (no `CompressionStream`, `ReadableStream`, service
 worker or WebGL2) get a message instead of a form. Safari 16.4+, Chrome

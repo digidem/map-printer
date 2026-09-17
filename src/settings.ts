@@ -1,4 +1,9 @@
-import { clampBbox, isValidBbox, type Bbox } from "./lib/viewport/index.ts";
+import {
+  clampBbox,
+  isValidBbox,
+  normalizeBearing,
+  type Bbox,
+} from "./lib/viewport/index.ts";
 
 export const DPI_OPTIONS = [96, 192, 288, 384] as const;
 export type Dpi = (typeof DPI_OPTIONS)[number];
@@ -11,6 +16,8 @@ export interface Settings {
   /** Page height in mm. */
   height: number;
   bbox: Bbox;
+  /** Degrees clockwise from north up, in `(-180, 180]`. */
+  bearing: number;
   previewBbox: boolean;
   dpi: Dpi;
 }
@@ -22,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   width: 297,
   height: 210,
   bbox: [-7.1354, 57.9095, -6.1357, 58.516],
+  bearing: 0,
   previewBbox: true,
   dpi: 96,
 };
@@ -39,6 +47,12 @@ export function parseBbox(text: string): Bbox | null {
 
 export function formatBbox(bbox: Bbox): string {
   return bbox.join(", ");
+}
+
+/** Any finite number of degrees, wrapped to `(-180, 180]`. */
+export function parseBearing(text: string): number | null {
+  const value = Number(text.trim());
+  return text.trim() && Number.isFinite(value) ? normalizeBearing(value) : null;
 }
 
 export function loadSettings(): Settings {
@@ -62,6 +76,10 @@ export function loadSettings(): Settings {
     width: positiveNumber(stored.width) ?? DEFAULT_SETTINGS.width,
     height: positiveNumber(stored.height) ?? DEFAULT_SETTINGS.height,
     bbox: bbox && isValidBbox(bbox) ? bbox : DEFAULT_SETTINGS.bbox,
+    bearing:
+      typeof stored.bearing === "number" && Number.isFinite(stored.bearing)
+        ? normalizeBearing(stored.bearing)
+        : DEFAULT_SETTINGS.bearing,
     previewBbox:
       typeof stored.previewBbox === "boolean"
         ? stored.previewBbox
