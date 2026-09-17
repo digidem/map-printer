@@ -90,8 +90,10 @@ gets, because plenty of MapLibre errors leave a map that renders correctly:
   map rendering.
 
 A render that does not reach `idle` within `renderTimeoutMs` rejects with a
-timeout error that names the tile. `document.visibilityState === "hidden"`
-stalls MapLibre's render loop, so the message says so when the tab is hidden.
+timeout error that names the tile. Only time spent with the document visible
+counts: a hidden tab pauses `requestAnimationFrame` and with it MapLibre's
+render loop, so switching away mid-export pauses the export rather than
+failing it.
 
 ### `maxTileSize(pixelRatio)`
 

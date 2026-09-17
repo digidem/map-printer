@@ -136,17 +136,16 @@ export async function createMapRenderer(
     const gl = requireWebGl2(canvas);
 
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => fail(timeoutError("The style", renderTimeoutMs)),
-        renderTimeoutMs,
+      const clearTimer = foregroundTimeout(renderTimeoutMs, () =>
+        fail(timeoutError("The style", renderTimeoutMs)),
       );
       const fail = (error: Error) => {
-        clearTimeout(timer);
+        clearTimer();
         reject(error);
       };
       rejectPending = fail;
       map.once("style.load", () => {
-        clearTimeout(timer);
+        clearTimer();
         resolve();
       });
     });
@@ -194,15 +193,11 @@ export async function createMapRenderer(
             }
             resolve();
           };
-          const timer = setTimeout(
-            () =>
-              fail(
-                timeoutError(`Tile ${tile.col},${tile.row}`, renderTimeoutMs),
-              ),
-            renderTimeoutMs,
+          const clearTimer = foregroundTimeout(renderTimeoutMs, () =>
+            fail(timeoutError(`Tile ${tile.col},${tile.row}`, renderTimeoutMs)),
           );
           const finish = () => {
-            clearTimeout(timer);
+            clearTimer();
             map.off("idle", onIdle);
             rejectPending = undefined;
           };
@@ -280,11 +275,34 @@ function describeError(event: ErrorEvent & { sourceId?: string }): Error {
 }
 
 function timeoutError(what: string, ms: number): Error {
-  const hidden =
-    document.visibilityState === "hidden"
-      ? " (the tab is hidden, which pauses map rendering)"
-      : "";
-  return new Error(`${what} did not finish rendering within ${ms} ms${hidden}`);
+  return new Error(`${what} did not finish rendering within ${ms} ms`);
+}
+
+/** setTimeout that only counts time while the document is visible: MapLibre
+ *  renders from requestAnimationFrame, which a hidden tab pauses. */
+function foregroundTimeout(ms: number, onTimeout: () => void): () => void {
+  let remaining = ms;
+  let startedAt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const resume = () => {
+    if (timer !== undefined) return;
+    startedAt = Date.now();
+    timer = setTimeout(onTimeout, remaining);
+  };
+  const pause = () => {
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    timer = undefined;
+    remaining -= Date.now() - startedAt;
+  };
+  const onVisibility = () =>
+    document.visibilityState === "hidden" ? pause() : resume();
+  document.addEventListener("visibilitychange", onVisibility);
+  onVisibility();
+  return () => {
+    pause();
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
 }
 
 function requireWebGl2(canvas: HTMLCanvasElement): WebGL2RenderingContext {

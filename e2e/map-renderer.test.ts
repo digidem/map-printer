@@ -326,6 +326,56 @@ describeEngines((engine) => {
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
+  test("a hidden tab pauses the render timeout", async () => {
+    const v = fitBounds(VIEW_BBOX, 256, 256);
+    const [tile] = tileGrid(v, TILE_SIZE);
+    // Serialized by hand: StyleSpecification is too deep for evaluate's arg typing.
+    const result = await page.evaluate(async (json: string) => {
+      const { style, tile, zoom } = JSON.parse(json);
+      let state: DocumentVisibilityState = "visible";
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => state,
+      });
+      const setVisibility = (next: DocumentVisibilityState) => {
+        state = next;
+        document.dispatchEvent(new Event("visibilitychange"));
+      };
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+      const renderer = await window.mapPrinter.createMapRenderer({
+        style,
+        pixelRatio: 1,
+        tileSize: { width: 256, height: 256 },
+        channels: 3,
+        renderTimeoutMs: 1_000,
+      });
+      try {
+        setVisibility("hidden");
+        let settled = false;
+        const rendering = renderer
+          .render(tile, zoom)
+          .catch((err: Error) => err.message)
+          .finally(() => (settled = true));
+        await sleep(2_000);
+        const settledWhileHidden = settled;
+        setVisibility("visible");
+        const t0 = performance.now();
+        const message = await rendering;
+        return { settledWhileHidden, message, visibleMs: performance.now() - t0 };
+      } finally {
+        renderer.destroy();
+        setVisibility("visible");
+        delete (document as { visibilityState?: unknown }).visibilityState;
+      }
+    }, JSON.stringify({ style: hangingStyle, tile, zoom: v.zoom }));
+
+    expect(result.settledWhileHidden).toBe(false);
+    expect(result.message).toMatch(/did not finish rendering within 1000 ms/);
+    expect(result.visibleMs).toBeGreaterThanOrEqual(900);
+    expect(result.visibleMs).toBeLessThan(5_000);
+  });
+
   test("rejects when the style cannot be loaded", async () => {
     const v = fitBounds(VIEW_BBOX, 256, 256);
     const [tile] = tileGrid(v, TILE_SIZE);
