@@ -2,7 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "map-printer",
   "compatibility_date": "2026-09-17",
-  "workers_dev": true,
+  "routes": [
+    { "pattern": "map-printer.comapeo.app", "custom_domain": true },
+  ],
+  "workers_dev": false,
+  // Defaults to workers_dev; PR previews need it on explicitly.
+  "preview_urls": true,
   "assets": {
     "directory": "./dist",
   },
