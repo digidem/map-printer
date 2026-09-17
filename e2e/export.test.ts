@@ -292,27 +292,33 @@ describeEngines((engine) => {
   testFailedDownload(
     "a style that 404s fails the download rather than truncating it",
     async () => {
-      const [download, message] = await Promise.all([
-        page.waitForEvent("download", { timeout: 60_000 }),
-        page.evaluate(async () => {
-          try {
-            await window.mapPrinter.exportMap({
-              style: "/fixtures/no-such-style.json",
-              bbox: [-4, -3, 4, 3],
-              widthPx: 320,
-              heightPx: 240,
-              pixelRatio: 1,
-              filename: "missing-style.png",
-            });
-            return "resolved";
-          } catch (err) {
-            return err instanceof Error ? err.message : String(err);
-          }
-        }),
-      ]);
-
+      const downloaded = page
+        .waitForEvent("download", { timeout: 60_000 })
+        .catch(() => null);
+      const message = await page.evaluate(async () => {
+        try {
+          await window.mapPrinter.exportMap({
+            style: "/fixtures/no-such-style.json",
+            bbox: [-4, -3, 4, 3],
+            widthPx: 320,
+            heightPx: 240,
+            pixelRatio: 1,
+            filename: "missing-style.png",
+          });
+          return "resolved";
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      });
       expect(message).not.toBe("resolved");
-      expect(await download.failure()).not.toBeNull();
+
+      // The response errors before any body byte reaches the browser; Linux
+      // WebKit then reports no download at all, other engines a failed one.
+      const download = await Promise.race([
+        downloaded,
+        page.waitForTimeout(3000).then(() => null),
+      ]);
+      if (download) expect(await download.failure()).not.toBeNull();
     },
   );
 });
