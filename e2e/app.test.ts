@@ -188,9 +188,9 @@ describeEngines((engine) => {
     await page.click("#cancel");
 
     await page.waitForSelector('[data-message="error"]');
-    expect(await page.textContent('[data-message="error"]')).toContain(
-      "cancelled",
-    );
+    const message = await page.textContent('[data-message="error"]');
+    expect(message).toContain("cancelled");
+    expect(message).toContain("incomplete");
     await page.waitForSelector('[role="progressbar"]', { state: "detached" });
     await page.waitForSelector("#export:not([disabled])");
   });

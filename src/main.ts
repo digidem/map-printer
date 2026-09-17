@@ -158,7 +158,14 @@ function start(app: HTMLElement) {
         form.message = null;
       }, SAVED_MESSAGE_MS);
     } catch (err) {
-      form.message = { kind: "error", text: describe(err) };
+      // The download had already started, and iOS keeps whatever was flushed.
+      const reached = Math.round(form.progress * 100);
+      form.message = {
+        kind: "error",
+        text:
+          `${describe(err)} (stopped at ${reached}%). ` +
+          "Any file that was downloaded is incomplete — delete it and try again.",
+      };
     } finally {
       form.exporting = false;
       form.progress = 0;
