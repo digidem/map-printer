@@ -27,7 +27,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.5",
     "wrangler": "^4.131.2"
   },
   "author": "Digital Democracy",
